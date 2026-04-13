@@ -180,13 +180,21 @@ export const resetPassword =
   };
 
 // 6. Update Password
+// 6. Update Password
 export const updatePassword =
   (updateData: UpdatePasswordRequest) => async (dispatch: AppDispatch) => {
     try {
       dispatch(authRequest());
       const { data } = await api.patch("/auth/update-password", updateData);
-      localStorage.setItem("accessToken", data.accessToken);
-      dispatch(loginSuccess(data.user));
+      
+      // STOP: Don't log them in automatically. 
+      // dispatch(loginSuccess(data.user)); <--- REMOVE THIS
+      
+      // START: Dispatch a success message instead
+      dispatch(authMessageSuccess(data.message || "Password updated successfully. Please login."));
+      
+      // Optional: Clear any old tokens just to be safe
+      localStorage.removeItem("accessToken"); 
     } catch (error) {
       handleError(error, dispatch, "Update Failed");
     }

@@ -1,14 +1,15 @@
 import React, { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { Lock, Loader2 } from "lucide-react";
+import { Lock, Loader2, Eye, EyeOff } from "lucide-react";
 import toast, { Toaster } from "react-hot-toast";
 import { useAppDispatch, useAppSelector } from "../../redux/hooks";
-import { clearMessages, clearErrors, updatePassword } from "../../redux/slices/authSlice";
+import { clearMessages, clearErrors, updatePassword, logout } from "../../redux/slices/authSlice";
 import JOB_LOGO from "../../assets/JOB_LOGO.jpg";
 
 const UpdatePasswordPage = () => {
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
 
   const dispatch = useAppDispatch();
   const navigate = useNavigate();
@@ -17,7 +18,7 @@ const UpdatePasswordPage = () => {
     (state) => state.auth
   );
 
-  // Guard: no tempUserId and not authenticated = no business being here
+  // Guard: no tempUserId and not authenticated = redirect to login
   useEffect(() => {
     if (!tempUserId && !isAuthenticated) {
       navigate("/login", { replace: true });
@@ -32,17 +33,21 @@ const UpdatePasswordPage = () => {
     }
   }, [error, dispatch]);
 
-  // Handle success toast + redirect
+  // FIX: Redirect based on the success message alone
   useEffect(() => {
-    if (isAuthenticated && message) {
+    if (message) {
       toast.success(message, { id: "update-success" });
+      
       const timer = setTimeout(() => {
         dispatch(clearMessages());
-        navigate("/", { replace: true });
+        // Force logout to clear any stale temp sessions and go to login
+        dispatch(logout()); 
+        navigate("/login", { replace: true });
       }, 2000);
+      
       return () => clearTimeout(timer);
     }
-  }, [isAuthenticated, message, navigate, dispatch]);
+  }, [message, navigate, dispatch]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -132,15 +137,16 @@ const UpdatePasswordPage = () => {
         <div className="w-full lg:w-1/2 flex items-center justify-center p-8 sm:p-12 lg:p-24 bg-white overflow-y-auto">
           <div className="w-full max-w-md">
             <div className="text-center mb-10">
-              <h2 className="text-3xl font-serif capitalise font-bold text-slate-900 tracking-tight">
-                Honorable <span className="text-[#1a3a2a]">   Judge</span>
+              <h2 className="text-3xl font-serif capitalize font-bold text-slate-900 tracking-tight">
+                Honorable <span className="text-[#1a3a2a]">Judge</span>
               </h2>
               <p className="mt-3 font-serif text-slate-500 font-medium">
-                For security purposes we kindly advise resetting your password before accessing your dashboard
+                For security purposes, we kindly advise resetting your password before accessing your dashboard.
               </p>
             </div>
 
             <form className="space-y-5" onSubmit={handleSubmit}>
+              {/* New Password Input */}
               <div>
                 <label className="text-[11px] font-black text-slate-500 uppercase tracking-[0.15em] block mb-2 ml-1">
                   New Secure Key
@@ -150,16 +156,24 @@ const UpdatePasswordPage = () => {
                     <Lock size={18} />
                   </div>
                   <input
-                    type="password"
+                    type={showPassword ? "text" : "password"}
                     required
                     value={newPassword}
                     onChange={(e) => setNewPassword(e.target.value)}
-                    className="block w-full pl-11 pr-4 py-4 border border-slate-200 rounded-xl bg-slate-50/50 text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-[#1a3a2a]/10 focus:border-[#1a3a2a] focus:bg-white transition-all outline-none"
+                    className="block w-full pl-11 pr-12 py-4 border border-slate-200 rounded-xl bg-slate-50/50 text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-[#1a3a2a]/10 focus:border-[#1a3a2a] focus:bg-white transition-all outline-none"
                     placeholder="••••••••"
                   />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword(!showPassword)}
+                    className="absolute inset-y-0 right-0 pr-4 flex items-center text-slate-400 hover:text-[#1a3a2a] transition-colors focus:outline-none"
+                  >
+                    {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                  </button>
                 </div>
               </div>
 
+              {/* Confirm Password Input */}
               <div>
                 <label className="text-[11px] font-black text-slate-500 uppercase tracking-[0.15em] block mb-2 ml-1">
                   Confirm Key
@@ -169,11 +183,11 @@ const UpdatePasswordPage = () => {
                     <Lock size={18} />
                   </div>
                   <input
-                    type="password"
+                    type={showPassword ? "text" : "password"}
                     required
                     value={confirmPassword}
                     onChange={(e) => setConfirmPassword(e.target.value)}
-                    className="block w-full pl-11 pr-4 py-4 border border-slate-200 rounded-xl bg-slate-50/50 text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-[#1a3a2a]/10 focus:border-[#1a3a2a] focus:bg-white transition-all outline-none"
+                    className="block w-full pl-11 pr-12 py-4 border border-slate-200 rounded-xl bg-slate-50/50 text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-[#1a3a2a]/10 focus:border-[#1a3a2a] focus:bg-white transition-all outline-none"
                     placeholder="••••••••"
                   />
                 </div>
