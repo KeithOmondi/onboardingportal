@@ -251,9 +251,9 @@ const JudgeDashboard = () => {
           sub="Current Session"
         />
         <MetricCard
-          label="Upcoming"
+          label="Messages"
           value={upcomingCount}
-          sub={ongoingCount > 0 ? `${ongoingCount} ongoing` : "Scheduled"}
+          sub={ongoingCount > 0 ? `${ongoingCount} unread` : "Read Messages"}
           valueColor="#c2a336"
         />
         <MetricCard

@@ -59,7 +59,7 @@ const JudgeHeader = ({ onMenuToggle }: JudgeHeaderProps) => {
         <div className="hidden md:flex items-center gap-2 pr-5 border-r border-white/15">
           <div className="w-2 h-2 rounded-full bg-[#C5A059] animate-pulse" />
           <span className="text-[10px] font-black text-white/50 uppercase tracking-widest">
-            Encrypted Session
+            
           </span>
         </div>
 

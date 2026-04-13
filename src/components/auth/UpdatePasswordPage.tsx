@@ -132,8 +132,8 @@ const UpdatePasswordPage = () => {
         <div className="w-full lg:w-1/2 flex items-center justify-center p-8 sm:p-12 lg:p-24 bg-white overflow-y-auto">
           <div className="w-full max-w-md">
             <div className="text-center mb-10">
-              <h2 className="text-3xl font-serif uppercase font-bold text-slate-900 tracking-tight">
-                Dear <span className="text-[#1a3a2a]">User</span>
+              <h2 className="text-3xl font-serif capitalise font-bold text-slate-900 tracking-tight">
+                Honorable <span className="text-[#1a3a2a]">   Judge</span>
               </h2>
               <p className="mt-3 font-serif text-slate-500 font-medium">
                 For security purposes we kindly advise resetting your password before accessing your dashboard
