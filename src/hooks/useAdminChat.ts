@@ -10,62 +10,51 @@ export interface Recipient {
   email: string;
   role: string;
   avatar_url?: string;
+  lastMessageAt?: string | Date; // Added to track sorting
 }
 
 const SOCKET_URL = import.meta.env.VITE_SOCKET_URL || "http://localhost:8000";
 
-/**
- * Replace an optimistic message with its server-confirmed version, or
- * append if no optimistic entry exists. Deduplicates by DB id as a safety net.
- *
- * The key insight: the server always echoes _tempId back in the confirmation
- * event, so we can find the exact optimistic entry and swap it out in-place.
- * This prevents the "ghost + real" duplication that appears until refresh.
- */
 const confirmMessage = (prev: ChatMessage[], confirmed: ChatMessage): ChatMessage[] => {
-  // 1. Try to replace the matching optimistic entry by _tempId
   if (confirmed._tempId) {
     const idx = prev.findIndex((m) => m._tempId === confirmed._tempId);
     if (idx !== -1) {
       const next = [...prev];
-      next[idx] = confirmed; // swap optimistic → confirmed in-place
+      next[idx] = confirmed;
       return next;
     }
   }
-
-  // 2. Guard: don't append if the DB id is already present (e.g. history loaded it)
   if (confirmed.id && prev.some((m) => m.id === confirmed.id)) {
     return prev;
   }
-
-  // 3. No optimistic entry found — just append (e.g. inbound message from other side)
   return [...prev, confirmed];
 };
 
 export const useAdminChat = () => {
   const { user } = useAppSelector((state) => state.auth);
-
-  // Only pull `connected` from useChat — we never call replyToUser from here.
-  // Calling replyToUser was the original duplication source (double emit + double state add).
   const { connected } = useChat();
 
   const [recipients, setRecipients] = useState<Recipient[]>([]);
   const [selectedRecipient, setSelectedRecipient] = useState<Recipient | null>(null);
-
-  // history  = REST snapshot loaded when a recipient is selected
   const [history, setHistory] = useState<ChatMessage[]>([]);
-
-  // liveMessages = socket events received after history was loaded.
-  // Optimistic messages are added here first, then replaced by server confirmations.
   const [liveMessages, setLiveMessages] = useState<ChatMessage[]>([]);
-
   const [loadingHistory, setLoadingHistory] = useState(false);
   const socketRef = useRef<Socket | null>(null);
 
-  // Ref so socket listeners always read the latest selected recipient
-  // without needing to re-register on every selection change.
   const selectedRecipientRef = useRef<Recipient | null>(null);
   selectedRecipientRef.current = selectedRecipient;
+
+  // Helper to bump a user to the top of the list
+  const bumpRecipient = useCallback((userId: string, timestamp: string | Date) => {
+    setRecipients((prev) => {
+      const index = prev.findIndex((r) => r.id === userId);
+      if (index === -1) return prev;
+      
+      const updated = [...prev];
+      updated[index] = { ...updated[index], lastMessageAt: timestamp };
+      return updated;
+    });
+  }, []);
 
   // ── Socket setup ──────────────────────────────────────────────────────────
   useEffect(() => {
@@ -77,37 +66,30 @@ export const useAdminChat = () => {
     });
     socketRef.current = socket;
 
-    /**
-     * "admin:message:sent" — server confirmation for a message WE sent.
-     * The payload always includes _tempId so confirmMessage can find and
-     * replace the optimistic entry rather than appending a duplicate.
-     */
     socket.on("admin:message:sent", (confirmed: ChatMessage) => {
-      setLiveMessages((prev) => confirmMessage(prev, confirmed));
+      // If the confirmed message belongs to the open chat, update the view
+      const partner = selectedRecipientRef.current;
+      if (partner && (confirmed.sender_id === partner.id || confirmed.recipient_id === partner.id)) {
+        setLiveMessages((prev) => confirmMessage(prev, confirmed));
+      }
+      // Always bump the recipient in the sidebar list
+      const targetId = confirmed.recipient_id;
+      if (targetId) bumpRecipient(targetId, confirmed.created_at || new Date());
     });
 
-    /**
-     * "admin:receive" — inbound message from a non-admin user to our inbox,
-     * OR a fan-out from a group message. Only add it if it belongs to the
-     * currently open conversation.
-     */
     socket.on("admin:receive", (msg: ChatMessage) => {
       const partner = selectedRecipientRef.current;
-      if (!partner) return;
-
-      const isRelevant =
-        msg.sender_id === partner.id ||
-        msg.recipient_id === partner.id;
-
-      if (isRelevant) {
+      
+      // 1. If it's the person we are currently talking to, add to chat view
+      if (partner && (msg.sender_id === partner.id || msg.recipient_id === partner.id)) {
         setLiveMessages((prev) => confirmMessage(prev, msg));
       }
+
+      // 2. WhatsApp logic: Always update the recipient's "lastMessageAt" 
+      // so the UI can sort them to the top.
+      bumpRecipient(msg.sender_id, msg.created_at || new Date());
     });
 
-    /**
-     * "admin:message:error" — server failed to persist the message.
-     * Remove the optimistic entry so the UI doesn't show an unsent bubble.
-     */
     socket.on("admin:message:error", ({ _tempId }: { _tempId: string }) => {
       setLiveMessages((prev) => prev.filter((m) => m._tempId !== _tempId));
     });
@@ -115,12 +97,13 @@ export const useAdminChat = () => {
     return () => {
       socket.disconnect();
     };
-  }, [user]);
+  }, [user, bumpRecipient]);
 
   // ── Fetch all messageable users ───────────────────────────────────────────
   const fetchRecipients = useCallback(async () => {
     try {
       const { data } = await api.get("/chat/recipients");
+      // Initial list from server
       setRecipients(data.recipients);
     } catch (err) {
       console.error("[useAdminChat] fetchRecipients failed:", err);
@@ -134,8 +117,6 @@ export const useAdminChat = () => {
   // ── Select recipient → load REST history ──────────────────────────────────
   const selectRecipient = useCallback(async (recipient: Recipient) => {
     setSelectedRecipient(recipient);
-    // Clear live messages so the previous conversation's real-time
-    // entries don't bleed into the newly opened one.
     setLiveMessages([]);
     setLoadingHistory(true);
     try {
@@ -155,9 +136,8 @@ export const useAdminChat = () => {
       if (!socketRef.current || !user) return;
 
       const _tempId = crypto.randomUUID();
+      const now = new Date();
 
-      // Add optimistic bubble immediately — it will be replaced (not duplicated)
-      // when the server fires "admin:message:sent" with the same _tempId.
       const optimistic: ChatMessage = {
         _tempId,
         sender_id: user.id,
@@ -166,15 +146,16 @@ export const useAdminChat = () => {
         recipient_id: recipientId,
         recipient_type: "single",
         message,
-        created_at: new Date(),
+        created_at: now,
       };
 
       setLiveMessages((prev) => [...prev, optimistic]);
+      
+      // Bump the user to top immediately (Optimistic UI)
+      bumpRecipient(recipientId, now);
 
-      // Single emit — server persists, then emits "admin:message:sent" back to
-      // this socket and "user:receive" to the recipient. No second emit anywhere.
       socketRef.current.emit("admin:message:single", {
-        _tempId,   // ← must be included so server echoes it back
+        _tempId,
         senderId: user.id,
         senderName: user.full_name,
         senderRole: user.role,
@@ -183,45 +164,31 @@ export const useAdminChat = () => {
         message,
       });
     },
-    [user]
+    [user, bumpRecipient]
   );
 
   // ── Send broadcast / group message ────────────────────────────────────────
-  // ── Send broadcast / group message ────────────────────────────────────────
-const sendBroadcast = useCallback(
-  (
-    message: string, 
-    type: "broadcast" | "group", 
-    targetRoles?: string[],
-    targetUserIds?: string[] // NEW: Support specific user IDs
-  ) => {
-    if (!socketRef.current || !user) return;
+  const sendBroadcast = useCallback(
+    (message: string, type: "broadcast" | "group", targetRoles?: string[], targetUserIds?: string[]) => {
+      if (!socketRef.current || !user) return;
 
-    const _tempId = crypto.randomUUID();
-    const event =
-      type === "broadcast" ? "admin:message:broadcast" : "admin:message:group";
+      const _tempId = crypto.randomUUID();
+      const event = type === "broadcast" ? "admin:message:broadcast" : "admin:message:group";
 
-    socketRef.current.emit(event, {
-      _tempId,
-      senderId: user.id,
-      senderName: user.full_name,
-      senderRole: user.role,
-      recipientType: type,
-      targetRoles,
-      targetUserIds, // Include the IDs in the payload for the server
-      message,
-    });
-  },
-  [user]
-);
+      socketRef.current.emit(event, {
+        _tempId,
+        senderId: user.id,
+        senderName: user.full_name,
+        senderRole: user.role,
+        recipientType: type,
+        targetRoles,
+        targetUserIds,
+        message,
+      });
+    },
+    [user]
+  );
 
-  // ── Merge history + live, deduplicated ───────────────────────────────────
-  // Walk both arrays in order, tracking seen keys so that:
-  //   • A message already in history doesn't re-appear when echoed via socket
-  //   • An optimistic entry (_tempId only) is recognised as distinct from the
-  //     confirmed entry (has DB id) — the swap happens inside confirmMessage
-  //     before this merge even runs, so by the time we get here liveMessages
-  //     already has the confirmed version in the right position.
   const conversationMessages: ChatMessage[] = (() => {
     const seenIds = new Set<string>();
     const result: ChatMessage[] = [];
@@ -236,7 +203,6 @@ const sendBroadcast = useCallback(
       seenIds.add(key);
       result.push(msg);
     }
-
     return result;
   })();
 

@@ -9,6 +9,8 @@ const formatTime = (timestamp: string | Date | undefined) => {
   return isNaN(d.getTime()) ? "" : d.toLocaleTimeString();
 };
 
+// ... (previous imports)
+
 const ChatButton = () => {
   const [isOpen, setIsOpen] = useState(false);
   const [input, setInput] = useState("");
@@ -19,12 +21,16 @@ const ChatButton = () => {
   const isAdmin =
     user?.role === UserRole.ADMIN || user?.role === UserRole.SUPER_ADMIN;
 
+  // NEW: Specifically check for Judge role
+  const isJudge = user?.role === UserRole.JUDGE;
+
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
   const handleSend = () => {
-    if (!input.trim()) return;
+    // Safety check: Don't allow sending if not a judge
+    if (!input.trim() || !isJudge) return;
     sendMessage(input.trim());
     setInput("");
   };
@@ -44,10 +50,11 @@ const ChatButton = () => {
           }}>
             <div>
               <div style={{ fontWeight: 600 }}>
-                {isAdmin ? "📋 Support Inbox" : "💬 Chat with ORHC Team"}
+                {isAdmin ? "📋 Support Inbox" : "💬 ORHC Team Chat"}
               </div>
               <div style={{ fontSize: "11px", opacity: 0.8 }}>
                 {connected ? "🟢 Connected" : "🔴 Disconnected"}
+                {!isAdmin && !isJudge && " • View Only"} 
               </div>
             </div>
             <span
@@ -61,23 +68,13 @@ const ChatButton = () => {
             flex: 1, padding: "12px", overflowY: "auto", background: "#f9f9f9",
             display: "flex", flexDirection: "column", gap: "8px",
           }}>
-            {messages.length === 0 && (
-              <p style={{ color: "#aaa", fontSize: "13px", textAlign: "center", marginTop: "40px" }}>
-                {isAdmin ? "No messages yet." : "👋 Send a message to support!"}
-              </p>
-            )}
+            {/* ... (Message map remains the same) */}
             {messages.map((msg, i) => {
               const isMine = msg.sender_id === user?.id;
               return (
-                <div
-                  key={i}
-                  style={{
-                    display: "flex", flexDirection: "column",
-                    alignItems: isMine ? "flex-end" : "flex-start",
-                  }}
-                >
+                <div key={i} style={{ display: "flex", flexDirection: "column", alignItems: isMine ? "flex-end" : "flex-start" }}>
                   <div style={{ fontSize: "10px", color: "#999", marginBottom: "2px" }}>
-                    {msg.sender_name}
+                    {msg.sender_name} {msg.sender_role === 'judge' && "⚖️"}
                   </div>
                   <div style={{
                     background: isMine ? "#4f46e5" : "#e5e7eb",
@@ -88,37 +85,47 @@ const ChatButton = () => {
                     {msg.message}
                   </div>
                   <div style={{ fontSize: "10px", color: "#bbb", marginTop: "2px" }}>
-  {formatTime(msg.created_at)}
-</div>
+                    {formatTime(msg.created_at)}
+                  </div>
                 </div>
               );
             })}
             <div ref={bottomRef} />
           </div>
 
-          {/* Input — hidden for admins, they use the Messages page */}
+          {/* Input Bar Logic */}
           {!isAdmin && (
-            <div style={{
-              display: "flex", borderTop: "1px solid #eee",
-              padding: "8px", gap: "6px",
-            }}>
-              <input
-                value={input}
-                onChange={(e) => setInput(e.target.value)}
-                onKeyDown={(e) => e.key === "Enter" && handleSend()}
-                placeholder="Type a message..."
-                style={{
-                  flex: 1, border: "1px solid #ddd", borderRadius: "8px",
-                  padding: "8px", fontSize: "13px", outline: "none",
-                }}
-              />
-              <button
-                onClick={handleSend}
-                style={{
-                  background: "#4f46e5", color: "#fff", border: "none",
-                  borderRadius: "8px", padding: "8px 14px", cursor: "pointer",
-                }}
-              >➤</button>
+            <div style={{ borderTop: "1px solid #eee", padding: "8px", background: "#fff" }}>
+              {isJudge ? (
+                // Only show input for Judges
+                <div style={{ display: "flex", gap: "6px" }}>
+                  <input
+                    value={input}
+                    onChange={(e) => setInput(e.target.value)}
+                    onKeyDown={(e) => e.key === "Enter" && handleSend()}
+                    placeholder="Type a message as Judge..."
+                    style={{
+                      flex: 1, border: "1px solid #ddd", borderRadius: "8px",
+                      padding: "8px", fontSize: "13px", outline: "none",
+                    }}
+                  />
+                  <button
+                    onClick={handleSend}
+                    style={{
+                      background: "#4f46e5", color: "#fff", border: "none",
+                      borderRadius: "8px", padding: "8px 14px", cursor: "pointer",
+                    }}
+                  >➤</button>
+                </div>
+              ) : (
+                // Show "Read Only" message for Registrars
+                <div style={{ 
+                  textAlign: "center", padding: "4px", fontSize: "11px", 
+                  color: "#888", fontWeight: 500, fontStyle: "italic" 
+                }}>
+                  You have read-only access to this chat.
+                </div>
+              )}
             </div>
           )}
         </div>

@@ -1,5 +1,5 @@
-import { useState, useRef, useEffect } from "react";
-import { Loader2 } from "lucide-react"; // Make sure to import Loader2
+import { useState, useRef, useEffect, useMemo } from "react";
+import { Loader2 } from "lucide-react";
 import { useAdminChat, type Recipient } from "../../hooks/useAdminChat";
 
 const ROLES = ["judge", "registrar", "staff"] as const;
@@ -41,6 +41,32 @@ const SuperAdminMessages = () => {
   const [showSidebar, setShowSidebar] = useState(true);
   const bottomRef = useRef<HTMLDivElement>(null);
 
+  // ── WhatsApp Style Sorting Logic ──
+  // We use useMemo to re-sort the recipients whenever a new message arrives 
+  // or the conversation history changes.
+  const sortedRecipients = useMemo(() => {
+    const list = [...recipients];
+
+    // Sort function
+    return list.sort((a, b) => {
+      // Find the latest message timestamp for recipient A
+      const lastMsgA = conversationMessages
+        .filter(m => m.sender_id === a.id || m.recipient_id === a.id)
+        .pop()?.created_at;
+
+      // Find the latest message timestamp for recipient B
+      const lastMsgB = conversationMessages
+        .filter(m => m.sender_id === b.id || m.recipient_id === b.id)
+        .pop()?.created_at;
+
+      const timeA = lastMsgA ? new Date(lastMsgA).getTime() : 0;
+      const timeB = lastMsgB ? new Date(lastMsgB).getTime() : 0;
+
+      // Descending order: higher timestamp (more recent) comes first
+      return timeB - timeA;
+    });
+  }, [recipients, conversationMessages]);
+
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [conversationMessages]);
@@ -50,7 +76,7 @@ const SuperAdminMessages = () => {
     setShowSidebar(false);
   };
 
-  const filtered = recipients.filter(
+  const filtered = sortedRecipients.filter(
     (r) =>
       r.full_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
       r.role.toLowerCase().includes(searchQuery.toLowerCase())
@@ -71,10 +97,8 @@ const SuperAdminMessages = () => {
     if (!input.trim()) return;
     if (broadcastType === "group" && selectedRoles.length === 0) return;
 
-    // Capture specific target IDs if any are selected
     const targetIds = selectedUserIds.length > 0 ? selectedUserIds : undefined;
 
-    // Passing targetIds to your hook
     sendBroadcast(
       input.trim(),
       broadcastType,
@@ -82,7 +106,6 @@ const SuperAdminMessages = () => {
       targetIds
     );
 
-    // Reset UI state
     setInput("");
     setSelectedUserIds([]);
   };
@@ -174,9 +197,11 @@ const SuperAdminMessages = () => {
                           >
                             {initials(r.full_name)}
                           </div>
-                          <div className="min-w-0">
-                            <div className="text-xs font-bold truncate text-[#1a3a2a]">
-                              {r.full_name}
+                          <div className="min-w-0 flex-1">
+                            <div className="flex justify-between items-baseline">
+                              <div className="text-xs font-bold truncate text-[#1a3a2a]">
+                                {r.full_name}
+                              </div>
                             </div>
                             <div className="mt-0.5">
                               <span

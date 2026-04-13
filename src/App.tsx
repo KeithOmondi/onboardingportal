@@ -25,6 +25,12 @@ import JudgeGallery from './pages/judge/JudgeGallery';
 import SuperAdminGallery from './pages/admin/SuperAdminGallery';
 import ChatButton from './components/ChatButton';
 import SuperAdminMessages from './pages/admin/SuperAdminMessages';
+import RegistrarLayout from './components/registrars/RegistrarLayout';
+import RegistrarDashboard from './pages/registrar/RegistrarDashboard';
+import RegistrarInfo from './pages/registrar/RegistrarInfo';
+import RegistrarNotice from './pages/registrar/RegistrarNotice';
+import RegistrarEvents from './pages/registrar/RegistrarEvents';
+import RegistrarGallery from './pages/registrar/RegistrarGallery';
 
 const App = () => {
   const dispatch = useAppDispatch();
@@ -84,21 +90,39 @@ const App = () => {
           </Route>
         </Route>
 
+
+         {/* --- Registrars Portal --- */}
+        <Route
+          element={
+            <ProtectedRoute allowedRoles={[UserRole.REGISTRAR]} />
+          }
+        >
+          <Route element={<RegistrarLayout />}>
+            <Route path="/registrar/dashboard" element={<RegistrarDashboard />} />
+            <Route path="/registrar/info" element={<RegistrarInfo />} />
+            <Route path="/registrar/notices" element={<RegistrarNotice />} />
+            <Route path="/registrar/events" element={<RegistrarEvents />} />
+            <Route path="/registrar/gallery" element={<RegistrarGallery />} />
+          </Route>
+        </Route>
+
         {/* --- Root redirect --- */}
         <Route
-          path="/"
-          element={
-            !isAuthenticated ? (
-              <Navigate to="/login" replace />
-            ) : isAdmin ? (
-              <Navigate to="/superadmin/dashboard" replace />
-            ) : user?.role === UserRole.JUDGE ? (
-              <Navigate to="/judge/dashboard" replace />
-            ) : (
-              <Navigate to="/login" replace />
-            )
-          }
-        />
+  path="/"
+  element={
+    !isAuthenticated ? (
+      <Navigate to="/login" replace />
+    ) : isAdmin ? (
+      <Navigate to="/superadmin/dashboard" replace />
+    ) : user?.role === UserRole.JUDGE ? (
+      <Navigate to="/judge/dashboard" replace />
+    ) : user?.role === UserRole.REGISTRAR ? ( // Add this block
+      <Navigate to="/registrar/dashboard" replace />
+    ) : (
+      <Navigate to="/login" replace />
+    )
+  }
+/>
 
         {/* --- 404 --- */}
         <Route
