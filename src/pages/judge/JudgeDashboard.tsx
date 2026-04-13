@@ -3,6 +3,7 @@ import { useAppDispatch, useAppSelector } from "../../redux/hooks";
 import { fetchEvents } from "../../redux/slices/eventsSlice";
 import { fetchNotices } from "../../redux/slices/noticeSlice";
 import { getMyGuestRegistry } from "../../redux/slices/guestSlice";
+import { useChat } from "../../hooks/useChat"; // Import your chat hook
 import type { IJudicialEvent } from "../../interfaces/events.interface";
 import type { INotice } from "../../interfaces/notices.interface";
 
@@ -120,8 +121,6 @@ const RegistryStatusBadge = ({ status }: { status: string }) => {
   );
 };
 
-// ── Progress Bar ──────────────────────────────────────────────────────────────
-
 const ProgressRow = ({
   label,
   count,
@@ -165,21 +164,14 @@ const genderLabel = (gender: string) =>
 const JudgeDashboard = () => {
   const dispatch = useAppDispatch();
 
+  // 1. Data from Redux
   const { user } = useAppSelector((state) => state.auth);
+  const { events, loading: eventsLoading } = useAppSelector((state) => state.events);
+  const { notices, unreadCount: unreadNotices, loading: noticesLoading } = useAppSelector((state) => state.notices);
+  const { myRegistry, loading: guestsLoading } = useAppSelector((state) => state.guests);
 
-  const { events, loading: eventsLoading } = useAppSelector(
-    (state) => state.events
-  );
-
-  const {
-    notices,
-    unreadCount,
-    loading: noticesLoading,
-  } = useAppSelector((state) => state.notices);
-
-  const { myRegistry, loading: guestsLoading } = useAppSelector(
-    (state) => state.guests
-  );
+  // 2. Data from Chat Hook
+  const { messages, connected, loading: chatLoading } = useChat();
 
   useEffect(() => {
     dispatch(fetchEvents("ALL"));
@@ -187,83 +179,85 @@ const JudgeDashboard = () => {
     dispatch(getMyGuestRegistry());
   }, [dispatch]);
 
+  // Calculations
   const totalEvents = events.length;
+  const upcomingCount = events.filter((e) => deriveEventStatus(e) === "UPCOMING").length;
+  const ongoingCount = events.filter((e) => deriveEventStatus(e) === "ONGOING").length;
+  const pastCount = events.filter((e) => deriveEventStatus(e) === "PAST").length;
 
-  const upcomingCount = events.filter(
-    (e) => deriveEventStatus(e) === "UPCOMING"
-  ).length;
-  const ongoingCount = events.filter(
-    (e) => deriveEventStatus(e) === "ONGOING"
-  ).length;
-  const pastCount = events.filter(
-    (e) => deriveEventStatus(e) === "PAST"
-  ).length;
-
+  // Filtered views
   const upcomingEvents: IJudicialEvent[] = [...events]
     .filter((e) => deriveEventStatus(e) !== "PAST")
-    .sort(
-      (a, b) =>
-        new Date(a.start_time).getTime() - new Date(b.start_time).getTime()
-    )
+    .sort((a, b) => new Date(a.start_time).getTime() - new Date(b.start_time).getTime())
     .slice(0, 4);
 
   const recentNotices: INotice[] = [...notices]
     .sort((a, b) => {
       if (a.is_read !== b.is_read) return a.is_read ? 1 : -1;
-      return (
-        new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
-      );
+      return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
     })
     .slice(0, 5);
 
   const guestCount = myRegistry.guests.length;
-  const loading = eventsLoading || noticesLoading || guestsLoading;
+  const totalMessages = messages.length;
+  
+  const loading = eventsLoading || noticesLoading || guestsLoading || chatLoading;
 
   const hour = new Date().getHours();
-  const greeting =
-    hour < 12 ? "Good morning" : hour < 17 ? "Good afternoon" : "Good evening";
+  const greeting = hour < 12 ? "Good morning" : hour < 17 ? "Good afternoon" : "Good evening";
   const displayName = user?.full_name ?? "Judge";
 
   return (
     <div className="p-4 md:p-6 max-w-6xl mx-auto bg-[#f9faf9]">
 
       {/* Header */}
-      <div className="mb-6">
-        <p className="text-sm font-medium text-[#c2a336]">
-          {greeting}, {displayName}
-        </p>
-        <h1 className="text-3xl font-bold text-[#1a3a32] mt-0.5 border-b-2 border-[#c2a336] inline-block pr-8">
-          Dashboard
-        </h1>
+      <div className="mb-6 flex justify-between items-start">
+        <div>
+          <p className="text-sm font-medium text-[#c2a336]">
+            {greeting}, {displayName}
+          </p>
+          <h1 className="text-3xl font-bold text-[#1a3a32] mt-0.5 border-b-2 border-[#c2a336] inline-block pr-8">
+            Dashboard
+          </h1>
+        </div>
+        
+        {/* Connection Status Badge */}
+        <div className="flex items-center gap-2 px-3 py-1 bg-white border border-[#e2e8e4] rounded-full shadow-sm">
+           <div className={`w-2 h-2 rounded-full ${connected ? 'bg-emerald-500 animate-pulse' : 'bg-red-400'}`} />
+           <span className="text-[10px] font-bold text-[#1a3a32] uppercase tracking-tighter">
+             {connected ? 'Securely Connected' : 'Offline'}
+           </span>
+        </div>
       </div>
 
       {loading && (
         <p className="text-xs text-[#1a3a32] mb-4 animate-pulse font-medium">
-          Loading judicial records…
+          Loading judicial records and communications…
         </p>
       )}
 
       {/* ── Metric Cards ── */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
         <MetricCard
-          label="Total events"
-          value={totalEvents}
-          sub="Current Session"
-        />
-        <MetricCard
-          label="Messages"
+          label="Upcoming Events"
           value={upcomingCount}
-          sub={ongoingCount > 0 ? `${ongoingCount} unread` : "Read Messages"}
+          sub={ongoingCount > 0 ? `${ongoingCount} ongoing now` : "Scheduled Sessions"}
           valueColor="#c2a336"
         />
         <MetricCard
-          label="Unread notices"
-          value={unreadCount}
-          sub={`of ${notices.length} notifications`}
-          valueColor={unreadCount > 0 ? "#7a1a1a" : "#1a3a32"}
+          label="Unread Notices"
+          value={unreadNotices}
+          sub={`of ${notices.length} total updates`}
+          valueColor={unreadNotices > 0 ? "#7a1a1a" : "#1a3a32"}
         />
         <MetricCard
-          label="Guests"
+          label="Messages"
+          value={totalMessages}
+          sub={connected ? "Active Chat Session" : "History Loaded"}
+          valueColor="#1a3a32"
+        />
+        <MetricCard
+          label="Guest Registry"
           value={guestCount}
           sub={myRegistry.status}
           valueColor="#25443c"
