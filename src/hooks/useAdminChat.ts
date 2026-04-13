@@ -187,26 +187,33 @@ export const useAdminChat = () => {
   );
 
   // ── Send broadcast / group message ────────────────────────────────────────
-  const sendBroadcast = useCallback(
-    (message: string, type: "broadcast" | "group", targetRoles?: string[]) => {
-      if (!socketRef.current || !user) return;
+  // ── Send broadcast / group message ────────────────────────────────────────
+const sendBroadcast = useCallback(
+  (
+    message: string, 
+    type: "broadcast" | "group", 
+    targetRoles?: string[],
+    targetUserIds?: string[] // NEW: Support specific user IDs
+  ) => {
+    if (!socketRef.current || !user) return;
 
-      const _tempId = crypto.randomUUID();
-      const event =
-        type === "broadcast" ? "admin:message:broadcast" : "admin:message:group";
+    const _tempId = crypto.randomUUID();
+    const event =
+      type === "broadcast" ? "admin:message:broadcast" : "admin:message:group";
 
-      socketRef.current.emit(event, {
-        _tempId,
-        senderId: user.id,
-        senderName: user.full_name,
-        senderRole: user.role,
-        recipientType: type,
-        targetRoles,
-        message,
-      });
-    },
-    [user]
-  );
+    socketRef.current.emit(event, {
+      _tempId,
+      senderId: user.id,
+      senderName: user.full_name,
+      senderRole: user.role,
+      recipientType: type,
+      targetRoles,
+      targetUserIds, // Include the IDs in the payload for the server
+      message,
+    });
+  },
+  [user]
+);
 
   // ── Merge history + live, deduplicated ───────────────────────────────────
   // Walk both arrays in order, tracking seen keys so that:
