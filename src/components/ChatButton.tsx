@@ -113,7 +113,7 @@ const ChatButton = () => {
                   <div key={msg.id ?? i} style={{ display: "flex", flexDirection: "column", alignItems: isMine ? "flex-end" : "flex-start" }}>
                     {!isMine && (
                       <div style={{ fontSize: "10px", color: "#64748b", fontWeight: 700, marginBottom: "2px", textTransform: "uppercase" }}>
-                        {isBroadcastTab ? "📢 SYSTEM RELAY" : `${msg.sender_name} ${msg.sender_role === "judge" ? "⚖️" : ""}`}
+                        {isBroadcastTab ? "📢 ORHC TEAM" : `${msg.sender_name} ${msg.sender_role === "judge" ? "⚖️" : ""}`}
                       </div>
                     )}
                     <div style={{
@@ -141,7 +141,7 @@ const ChatButton = () => {
           <div style={{ padding: "12px", background: "#fff", borderTop: "1px solid #f1f5f9" }}>
             {activeTab === "broadcast" ? (
               <div style={{ textAlign: "center", fontSize: "11px", color: "#64748b", fontWeight: 700, padding: "8px", background: "#fefce8", borderRadius: "8px" }}>
-                LATEST ADMINISTRATIVE ANNOUNCEMENTS
+                End-to-End Encrypted
               </div>
             ) : isJudge ? (
               <div style={{ display: "flex", gap: "8px" }}>
