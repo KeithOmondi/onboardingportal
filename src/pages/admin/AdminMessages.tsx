@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useMemo } from "react";
+import { useState, useRef, useEffect } from "react";
 import { Loader2 } from "lucide-react";
 import { useAdminChat, type Recipient } from "../../hooks/useAdminChat";
 
@@ -41,32 +41,6 @@ const AdminMessages = () => {
   const [showSidebar, setShowSidebar] = useState(true);
   const bottomRef = useRef<HTMLDivElement>(null);
 
-  // ── WhatsApp Style Sorting Logic ──
-  // We use useMemo to re-sort the recipients whenever a new message arrives 
-  // or the conversation history changes.
-  const sortedRecipients = useMemo(() => {
-    const list = [...recipients];
-
-    // Sort function
-    return list.sort((a, b) => {
-      // Find the latest message timestamp for recipient A
-      const lastMsgA = conversationMessages
-        .filter(m => m.sender_id === a.id || m.recipient_id === a.id)
-        .pop()?.created_at;
-
-      // Find the latest message timestamp for recipient B
-      const lastMsgB = conversationMessages
-        .filter(m => m.sender_id === b.id || m.recipient_id === b.id)
-        .pop()?.created_at;
-
-      const timeA = lastMsgA ? new Date(lastMsgA).getTime() : 0;
-      const timeB = lastMsgB ? new Date(lastMsgB).getTime() : 0;
-
-      // Descending order: higher timestamp (more recent) comes first
-      return timeB - timeA;
-    });
-  }, [recipients, conversationMessages]);
-
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [conversationMessages]);
@@ -76,7 +50,8 @@ const AdminMessages = () => {
     setShowSidebar(false);
   };
 
-  const filtered = sortedRecipients.filter(
+  // recipients from useAdminChat() is pre-sorted — use it directly
+  const filtered = recipients.filter(
     (r) =>
       r.full_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
       r.role.toLowerCase().includes(searchQuery.toLowerCase())
@@ -197,11 +172,20 @@ const AdminMessages = () => {
                           >
                             {initials(r.full_name)}
                           </div>
+
                           <div className="min-w-0 flex-1">
-                            <div className="flex justify-between items-baseline">
+                            <div className="flex justify-between items-baseline gap-2">
                               <div className="text-xs font-bold truncate text-[#1a3a2a]">
                                 {r.full_name}
                               </div>
+                              {/* ── Unread badge ── */}
+                              {(r.unreadCount ?? 0) > 0 && (
+                                <span className="flex-shrink-0 bg-[#3a6644] text-white text-[9px] font-black
+                                                 rounded-full min-w-[18px] h-[18px] px-1
+                                                 flex items-center justify-center leading-none">
+                                  {(r.unreadCount ?? 0) > 99 ? "99+" : r.unreadCount}
+                                </span>
+                              )}
                             </div>
                             <div className="mt-0.5">
                               <span

@@ -10,16 +10,25 @@ export interface Recipient {
   email: string;
   role: string;
   avatar_url?: string;
-  lastMessageAt?: string | Date;
+  lastMessageAt?: Date;   // always a Date internally; never a string
+  unreadCount?: number;   // badge count for admin inbox
 }
 
-/**
- * Fix: Derives the Socket URL from VITE_API_URL if VITE_SOCKET_URL is missing.
- */
+interface ConversationUpdatedPayload {
+  conversationId: string;
+  lastMessage: string;
+  lastMessageAt: string | Date;
+  senderId: string;
+  senderName: string;
+  senderRole: string;
+  recipientType: "single" | "broadcast" | "group";
+  targetRoles?: string[] | null;
+}
+
 const getSocketUrl = () => {
   if (import.meta.env.VITE_SOCKET_URL) return import.meta.env.VITE_SOCKET_URL;
   const apiUrl = import.meta.env.VITE_API_URL;
-  if (apiUrl) return apiUrl.split('/api')[0];
+  if (apiUrl) return apiUrl.split("/api")[0];
   return "http://localhost:8000";
 };
 
@@ -34,9 +43,7 @@ const confirmMessage = (prev: ChatMessage[], confirmed: ChatMessage): ChatMessag
       return next;
     }
   }
-  if (confirmed.id && prev.some((m) => m.id === confirmed.id)) {
-    return prev;
-  }
+  if (confirmed.id && prev.some((m) => m.id === confirmed.id)) return prev;
   return [...prev, confirmed];
 };
 
@@ -51,78 +58,122 @@ export const useAdminChat = () => {
   const [loadingHistory, setLoadingHistory] = useState(false);
   const socketRef = useRef<Socket | null>(null);
 
+  // Stable ref so socket handlers always read current value without re-registering
   const selectedRecipientRef = useRef<Recipient | null>(null);
   selectedRecipientRef.current = selectedRecipient;
 
-  const bumpRecipient = useCallback((userId: string, timestamp: string | Date) => {
-    setRecipients((prev) => {
-      const index = prev.findIndex((r) => r.id === userId);
-      if (index === -1) return prev;
-      
-      const updated = [...prev];
-      updated[index] = { ...updated[index], lastMessageAt: timestamp };
-      return updated;
-    });
-  }, []);
+  /**
+   * Core helper — called whenever ANY message activity happens for a user.
+   * 
+   * - Updates lastMessageAt → triggers re-sort (recipients sorted in render)
+   * - Increments unreadCount ONLY if that conversation isn't currently open
+   */
+  const updateRecipientActivity = useCallback(
+    (userId: string, timestamp: string | Date, isIncoming: boolean) => {
+      setRecipients((prev) => {
+        const idx = prev.findIndex((r) => r.id === userId);
+        if (idx === -1) return prev;                    // unknown user, skip
 
-  // ── Socket setup with PNA/CORS Fix ──────────────────────────────────────────
+        const isOpen = selectedRecipientRef.current?.id === userId;
+        const current = prev[idx];
+
+        const updated: Recipient = {
+          ...current,
+          lastMessageAt: new Date(timestamp),
+          unreadCount: isIncoming && !isOpen
+            ? (current.unreadCount ?? 0) + 1
+            : (current.unreadCount ?? 0),
+        };
+
+        const next = [...prev];
+        next[idx] = updated;
+        return next;
+      });
+    },
+    []
+  );
+
+  // ── Socket setup ─────────────────────────────────────────────
   useEffect(() => {
     if (!user?.full_name) return;
 
     const socket = io(SOCKET_URL, {
       query: { userId: user.id, role: user.role, name: user.full_name },
       withCredentials: true,
-      /**
-       * CRITICAL FIX: Force WebSockets to bypass CORS loopback restrictions
-       * when calling a local/private backend from a public Vercel frontend.
-       */
       transports: ["websocket", "polling"],
     });
     socketRef.current = socket;
 
-    socket.on("admin:message:sent", (confirmed: ChatMessage) => {
-      const partner = selectedRecipientRef.current;
-      if (partner && (confirmed.sender_id === partner.id || confirmed.recipient_id === partner.id)) {
-        setLiveMessages((prev) => confirmMessage(prev, confirmed));
-      }
-      const targetId = confirmed.recipient_id;
-      if (targetId) bumpRecipient(targetId, confirmed.created_at || new Date());
+    /**
+     * conversation:updated — the single source of truth for sorting + badges.
+     * Fired by the server after every message regardless of type.
+     */
+    socket.on("conversation:updated", (payload: ConversationUpdatedPayload) => {
+      if (payload.recipientType !== "single") return; // broadcast/group don't map to a user row
+
+      const isIncoming = payload.senderId !== user.id;
+      updateRecipientActivity(payload.conversationId, payload.lastMessageAt, isIncoming);
     });
 
+    // Confirmed delivery of admin's own sent message → swap optimistic bubble
+    socket.on("admin:message:sent", (confirmed: ChatMessage) => {
+      const partner = selectedRecipientRef.current;
+      if (
+        partner &&
+        (confirmed.sender_id === partner.id || confirmed.recipient_id === partner.id)
+      ) {
+        setLiveMessages((prev) => confirmMessage(prev, confirmed));
+      }
+    });
+
+    // Incoming message from a user → add to conversation if it's currently open
     socket.on("admin:receive", (msg: ChatMessage) => {
       const partner = selectedRecipientRef.current;
-      if (partner && (msg.sender_id === partner.id || msg.recipient_id === partner.id)) {
+      if (
+        partner &&
+        (msg.sender_id === partner.id || msg.recipient_id === partner.id)
+      ) {
         setLiveMessages((prev) => confirmMessage(prev, msg));
       }
-      bumpRecipient(msg.sender_id, msg.created_at || new Date());
+      // NOTE: sorting + badge is handled by conversation:updated, not here
     });
 
     socket.on("admin:message:error", ({ _tempId }: { _tempId: string }) => {
       setLiveMessages((prev) => prev.filter((m) => m._tempId !== _tempId));
     });
 
-    return () => {
-      socket.disconnect();
-    };
-  }, [user, bumpRecipient]);
+    return () => { socket.disconnect(); };
+  }, [user, updateRecipientActivity]);
 
+  // ── Fetch recipients ─────────────────────────────────────────
   const fetchRecipients = useCallback(async () => {
     try {
       const { data } = await api.get("/chat/recipients");
-      setRecipients(data.recipients);
+      // Normalise lastMessageAt to Date on the way in
+      const normalised: Recipient[] = (data.recipients as Recipient[]).map((r) => ({
+        ...r,
+        lastMessageAt: r.lastMessageAt ? new Date(r.lastMessageAt) : undefined,
+        unreadCount: 0,
+      }));
+      setRecipients(normalised);
     } catch (err) {
       console.error("[useAdminChat] fetchRecipients failed:", err);
     }
   }, []);
 
-  useEffect(() => {
-    fetchRecipients();
-  }, [fetchRecipients]);
+  useEffect(() => { fetchRecipients(); }, [fetchRecipients]);
 
+  // ── Select a recipient ───────────────────────────────────────
   const selectRecipient = useCallback(async (recipient: Recipient) => {
     setSelectedRecipient(recipient);
     setLiveMessages([]);
     setLoadingHistory(true);
+
+    // Clear badge the moment admin opens the conversation
+    setRecipients((prev) =>
+      prev.map((r) => (r.id === recipient.id ? { ...r, unreadCount: 0 } : r))
+    );
+
     try {
       const { data } = await api.get(`/chat/history/${recipient.id}`);
       setHistory(data.messages ?? []);
@@ -134,6 +185,7 @@ export const useAdminChat = () => {
     }
   }, []);
 
+  // ── Send to single user ──────────────────────────────────────
   const sendToUser = useCallback(
     (message: string, recipientId: string) => {
       if (!socketRef.current || !user) return;
@@ -153,7 +205,6 @@ export const useAdminChat = () => {
       };
 
       setLiveMessages((prev) => [...prev, optimistic]);
-      bumpRecipient(recipientId, now);
 
       socketRef.current.emit("admin:message:single", {
         _tempId,
@@ -165,9 +216,10 @@ export const useAdminChat = () => {
         message,
       });
     },
-    [user, bumpRecipient]
+    [user]
   );
 
+  // ── Broadcast / group ────────────────────────────────────────
   const sendBroadcast = useCallback(
     (message: string, type: "broadcast" | "group", targetRoles?: string[], targetUserIds?: string[]) => {
       if (!socketRef.current || !user) return;
@@ -189,16 +241,13 @@ export const useAdminChat = () => {
     [user]
   );
 
+  // ── Merge history + live, deduplicated ──────────────────────
   const conversationMessages: ChatMessage[] = (() => {
     const seenIds = new Set<string>();
     const result: ChatMessage[] = [];
-
     for (const msg of [...history, ...liveMessages]) {
       const key = msg.id ?? msg._tempId;
-      if (!key) {
-        result.push(msg);
-        continue;
-      }
+      if (!key) { result.push(msg); continue; }
       if (seenIds.has(key)) continue;
       seenIds.add(key);
       result.push(msg);
@@ -206,8 +255,19 @@ export const useAdminChat = () => {
     return result;
   })();
 
+  /**
+   * Sorted recipients — most recent activity first.
+   * Recipients with no lastMessageAt fall to the bottom alphabetically.
+   */
+  const sortedRecipients = [...recipients].sort((a, b) => {
+    const tA = a.lastMessageAt?.getTime() ?? 0;
+    const tB = b.lastMessageAt?.getTime() ?? 0;
+    if (tB !== tA) return tB - tA;                   // recent first
+    return a.full_name.localeCompare(b.full_name);    // alpha tiebreak
+  });
+
   return {
-    recipients,
+    recipients: sortedRecipients,                     // pre-sorted, drop useMemo in UI
     selectedRecipient,
     selectRecipient,
     conversationMessages,

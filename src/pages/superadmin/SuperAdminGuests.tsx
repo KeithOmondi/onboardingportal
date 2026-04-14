@@ -8,6 +8,7 @@ import {
 import { adminGetAllRegistries, adminGetRegistryById } from "../../redux/slices/guestSlice";
 import type { AppDispatch, RootState } from "../../redux/store";
 import type { IAdminRegistryRow, IGuest, RegistrationStatus } from "../../interfaces/guests.interface";
+import api from "../../api/api";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 type SortKey = keyof Pick<IAdminRegistryRow, "judge_name" | "status" | "guest_count" | "updated_at">;
@@ -29,6 +30,21 @@ const formatDate = (iso: string) =>
 const statusMeta: Record<RegistrationStatus, { label: string }> = {
   SUBMITTED: { label: "Finalized" },
   DRAFT:     { label: "Draft Mode" },
+};
+
+// ── Download Helper ──────────────────────────────────────────────────────────
+const downloadJudgePDF = async (userId: string, judgeName: string) => {
+  const response = await api.get(`/guests/report/${userId}`, {
+    responseType: "blob",
+  });
+  const url = window.URL.createObjectURL(new Blob([response.data]));
+  const link = document.createElement("a");
+  link.href = url;
+  link.setAttribute("download", `GuestList_${judgeName.replace(/\s+/g, "_")}.pdf`);
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  window.URL.revokeObjectURL(url);
 };
 
 // ── Sort Icon ────────────────────────────────────────────────────────────────
@@ -110,11 +126,12 @@ const SuperAdminGuests = () => {
     (state: RootState) => state.guests.admin
   );
 
-  const [search,     setSearch]     = useState("");
-  const [filter,     setFilter]     = useState<RegistrationStatus | "ALL">("ALL");
-  const [sortKey,    setSortKey]    = useState<SortKey>("updated_at");
-  const [sortDir,    setSortDir]    = useState<SortDir>("desc");
-  const [expandedId, setExpandedId] = useState<number | null>(null);
+  const [search,      setSearch]      = useState("");
+  const [filter,      setFilter]      = useState<RegistrationStatus | "ALL">("ALL");
+  const [sortKey,     setSortKey]     = useState<SortKey>("updated_at");
+  const [sortDir,     setSortDir]     = useState<SortDir>("desc");
+  const [expandedId,  setExpandedId]  = useState<number | null>(null);
+  const [downloading, setDownloading] = useState<string | null>(null); // ← added
 
   useEffect(() => {
     dispatch(adminGetAllRegistries());
@@ -160,6 +177,18 @@ const SuperAdminGuests = () => {
     }
   };
 
+  // ── Download Handler ───────────────────────────────────────────────────────
+  const handleDownload = async (userId: string, judgeName: string) => {
+    try {
+      setDownloading(userId);
+      await downloadJudgePDF(userId, judgeName);
+    } catch (error) {
+      console.error("Failed to download PDF", error);
+    } finally {
+      setDownloading(null);
+    }
+  };
+
   if (loading && allLists.length === 0) {
     return (
       <div className="flex h-96 flex-col items-center justify-center space-y-4">
@@ -174,23 +203,23 @@ const SuperAdminGuests = () => {
   return (
     <div className="max-w-7xl mx-auto p-8 space-y-8 animate-in fade-in duration-700">
 
-     {/* Header & Stats */}
-<div className="flex flex-col gap-6 border-b border-slate-200 pb-8">
-  <div>
-    <h1 className="text-[#355E3B] font-serif text-3xl font-bold mb-2 tracking-tight">
-      Guest Registration
-    </h1>
-    <p className="text-slate-500 text-xs font-black uppercase tracking-widest">
-      High Court Registry Management
-    </p>
-  </div>
-  <div className="flex flex-wrap gap-4">
-    <StatCard icon={<ShieldCheck size={18} />}  label="Total Entries" value={allLists.length} />
-    <StatCard icon={<CheckCircle2 size={18} />} label="Finalized"     value={submittedCount} color="text-green-600" />
-    <StatCard icon={<Clock3 size={18} />}        label="Drafts"        value={draftCount}     color="text-amber-600" />
-    <StatCard icon={<Users size={18} />}          label="Guest Total"  value={totalGuests} />
-  </div>
-</div>
+      {/* Header & Stats */}
+      <div className="flex flex-col gap-6 border-b border-slate-200 pb-8">
+        <div>
+          <h1 className="text-[#355E3B] font-serif text-3xl font-bold mb-2 tracking-tight">
+            Guest Registration
+          </h1>
+          <p className="text-slate-500 text-xs font-black uppercase tracking-widest">
+            High Court Registry Management
+          </p>
+        </div>
+        <div className="flex flex-wrap gap-4">
+          <StatCard icon={<ShieldCheck size={18} />}  label="Total Entries" value={allLists.length} />
+          <StatCard icon={<CheckCircle2 size={18} />} label="Finalized"     value={submittedCount} color="text-green-600" />
+          <StatCard icon={<Clock3 size={18} />}        label="Drafts"        value={draftCount}     color="text-amber-600" />
+          <StatCard icon={<Users size={18} />}          label="Guest Total"  value={totalGuests} />
+        </div>
+      </div>
 
       {/* Toolbar */}
       <div className="flex flex-wrap gap-3 items-center">
@@ -258,6 +287,7 @@ const SuperAdminGuests = () => {
               ) : (
                 rows.map((row) => {
                   const isExpanded = expandedId === row.id;
+                  const isDownloading = downloading === row.user_id; // ← added
                   return (
                     <React.Fragment key={row.id}>
                       {/* Summary Row */}
@@ -288,18 +318,35 @@ const SuperAdminGuests = () => {
                         <td className="px-8 py-6 text-xs text-slate-500 font-semibold">
                           {formatDate(row.updated_at)}
                         </td>
-                        <td className="px-8 py-6 text-right">
-                          <button
-                            onClick={() => handleToggleRow(row.id)}
-                            className={`inline-flex items-center gap-2 px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${
-                              isExpanded
-                                ? "bg-[#355E3B] text-white shadow-lg shadow-[#355E3B]/20"
-                                : "bg-white border border-slate-200 text-[#355E3B] hover:bg-slate-50"
-                            }`}
-                          >
-                            {isExpanded ? "Close" : "View"}
-                            {isExpanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
-                          </button>
+                        <td className="px-8 py-6">
+                          <div className="flex items-center justify-end gap-2"> {/* ← changed to div with gap */}
+                            {/* Download Button ← added */}
+                            <button
+                              onClick={() => handleDownload(row.user_id, row.judge_name)}
+                              disabled={isDownloading}
+                              title="Download PDF Report"
+                              className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all bg-white border border-slate-200 text-slate-500 hover:text-[#355E3B] hover:border-[#355E3B]/30 hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                            >
+                              {isDownloading
+                                ? <Loader2 size={13} className="animate-spin" />
+                                : <FileDown size={13} />
+                              }
+                              {isDownloading ? "Downloading..." : "PDF"}
+                            </button>
+
+                            {/* View / Close Button */}
+                            <button
+                              onClick={() => handleToggleRow(row.id)}
+                              className={`inline-flex items-center gap-2 px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${
+                                isExpanded
+                                  ? "bg-[#355E3B] text-white shadow-lg shadow-[#355E3B]/20"
+                                  : "bg-white border border-slate-200 text-[#355E3B] hover:bg-slate-50"
+                              }`}
+                            >
+                              {isExpanded ? "Close" : "View"}
+                              {isExpanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+                            </button>
+                          </div>
                         </td>
                       </tr>
 
@@ -320,9 +367,17 @@ const SuperAdminGuests = () => {
                                   <h3 className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">
                                     Authorized Guest Details
                                   </h3>
-                                  <button className="flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-[#355E3B] hover:underline">
-                                    <FileDown size={12} />
-                                    Download PDF Report
+                                  {/* Download PDF inside expanded panel ← updated from placeholder */}
+                                  <button
+                                    onClick={() => handleDownload(row.user_id, row.judge_name)}
+                                    disabled={isDownloading}
+                                    className="flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-[#355E3B] hover:underline disabled:opacity-50 disabled:cursor-not-allowed"
+                                  >
+                                    {isDownloading
+                                      ? <Loader2 size={12} className="animate-spin" />
+                                      : <FileDown size={12} />
+                                    }
+                                    {isDownloading ? "Downloading..." : "Download PDF Report"}
                                   </button>
                                 </div>
                                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -351,7 +406,7 @@ const SuperAdminGuests = () => {
       {/* Footer count */}
       {!loading && rows.length > 0 && (
         <p className="text-xs text-slate-400 text-right">
-          showing {rows.length} of {allLists.length} 
+          showing {rows.length} of {allLists.length}
         </p>
       )}
     </div>

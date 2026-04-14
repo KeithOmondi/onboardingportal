@@ -16,23 +16,16 @@ export interface ChatMessage {
   _tempId?: string;
 }
 
-/**
- * Fix: Derives the Socket URL from VITE_API_URL if VITE_SOCKET_URL is missing.
- * It removes the '/api/v1' suffix to get the base server URL.
- */
 const getSocketUrl = () => {
   if (import.meta.env.VITE_SOCKET_URL) return import.meta.env.VITE_SOCKET_URL;
-  
-  const apiUrl = import.meta.env.VITE_API_URL; // http://localhost:8000/api/v1
-  if (apiUrl) {
-    return apiUrl.split('/api')[0]; // Returns http://localhost:8000
-  }
+  const apiUrl = import.meta.env.VITE_API_URL;
+  if (apiUrl) return apiUrl.split("/api")[0];
   return "http://localhost:8000";
 };
 
 const SOCKET_URL = getSocketUrl();
 
-const mergeMessage = (prev: ChatMessage[], msg: ChatMessage) => {
+const mergeMessage = (prev: ChatMessage[], msg: ChatMessage): ChatMessage[] => {
   if (msg.id && prev.some((m) => m.id === msg.id)) return prev;
   return [...prev, msg];
 };
@@ -40,11 +33,26 @@ const mergeMessage = (prev: ChatMessage[], msg: ChatMessage) => {
 export const useChat = () => {
   const { user } = useAppSelector((state) => state.auth);
   const socketRef = useRef<Socket | null>(null);
+
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [connected, setConnected] = useState(false);
   const [loading, setLoading] = useState(false);
 
-  // 1. Fetch History
+  // Unread count: increments on incoming messages, reset by the consumer
+  const [unreadCount, setUnreadCount] = useState(0);
+
+  // The consumer tells us whether the chat window is open so we know
+  // whether to increment the badge or not
+  const isChatOpenRef = useRef(false);
+
+  const markAsRead = () => setUnreadCount(0);
+
+  const setChatOpen = (open: boolean) => {
+    isChatOpenRef.current = open;
+    if (open) setUnreadCount(0); // clear badge the moment they open it
+  };
+
+  // ── 1. Fetch history ────────────────────────────────────────
   useEffect(() => {
     if (!user) return;
 
@@ -65,32 +73,35 @@ export const useChat = () => {
     fetchHistory();
   }, [user]);
 
-  // 2. Socket Setup with CORS/PNA Fix
+  // ── 2. Socket setup ─────────────────────────────────────────
   useEffect(() => {
     if (!user?.full_name) return;
 
     socketRef.current = io(SOCKET_URL, {
       query: { userId: user.id, role: user.role, name: user.full_name },
       withCredentials: true,
-      /**
-       * CRITICAL FIX: Forces 'websocket' as the primary transport.
-       * This bypasses the browser's PNA check for 'polling' (XMLHttpRequest)
-       * which often blocks the 'loopback' address when deployed on Vercel.
-       */
       transports: ["websocket", "polling"],
     });
 
     socketRef.current.on("connect", () => setConnected(true));
     socketRef.current.on("disconnect", () => setConnected(false));
 
+    // Incoming message from admin → judge sees it
     socketRef.current.on("user:receive", (msg: ChatMessage) => {
       setMessages((prev) => mergeMessage(prev, msg));
+      // Only bump badge if chat is closed
+      if (!isChatOpenRef.current) {
+        setUnreadCount((n) => n + 1);
+      }
     });
 
+    // Admin inbox: admin sees incoming user messages
     socketRef.current.on("admin:receive", (msg: ChatMessage) => {
       setMessages((prev) => mergeMessage(prev, msg));
+      // Admins have their own inbox UI; badge handled separately there
     });
 
+    // Optimistic → confirmed swap for user (judge) sent messages
     socketRef.current.on("user:message:sent", (msg: ChatMessage) => {
       setMessages((prev) => {
         const withoutOptimistic = prev.filter(
@@ -100,7 +111,22 @@ export const useChat = () => {
       });
     });
 
+    // Optimistic → confirmed swap for admin sent messages
+    socketRef.current.on("admin:message:sent", (msg: ChatMessage) => {
+      setMessages((prev) => {
+        const withoutOptimistic = prev.filter(
+          (m) => m.id || m._tempId !== msg._tempId
+        );
+        return mergeMessage(withoutOptimistic, msg);
+      });
+    });
+
+    // Failed send — remove optimistic bubble
     socketRef.current.on("user:message:error", ({ _tempId }: { _tempId: string }) => {
+      setMessages((prev) => prev.filter((m) => m._tempId !== _tempId));
+    });
+
+    socketRef.current.on("admin:message:error", ({ _tempId }: { _tempId: string }) => {
       setMessages((prev) => prev.filter((m) => m._tempId !== _tempId));
     });
 
@@ -109,7 +135,9 @@ export const useChat = () => {
     };
   }, [user]);
 
-  // 3. Actions
+  // ── 3. Actions ──────────────────────────────────────────────
+
+  // Judge → admin
   const sendMessage = (message: string) => {
     if (!user || !socketRef.current) return;
     const _tempId = crypto.randomUUID();
@@ -126,6 +154,7 @@ export const useChat = () => {
     setMessages((prev) => [...prev, optimistic]);
   };
 
+  // Admin → single user
   const replyToUser = (message: string, recipientId: string) => {
     if (!user || !socketRef.current) return;
     const _tempId = crypto.randomUUID();
@@ -139,9 +168,24 @@ export const useChat = () => {
       message,
       created_at: new Date(),
     };
-    socketRef.current.emit("admin:message:single", msg);
+    socketRef.current.emit("admin:message:single", {
+      ...msg,
+      senderId: user.id,
+      senderName: user.full_name,
+      senderRole: user.role,
+      recipientId: recipientId,
+    });
     setMessages((prev) => [...prev, msg]);
   };
 
-  return { messages, sendMessage, replyToUser, connected, loading };
+  return {
+    messages,
+    sendMessage,
+    replyToUser,
+    connected,
+    loading,
+    unreadCount,
+    markAsRead,
+    setChatOpen,
+  };
 };
