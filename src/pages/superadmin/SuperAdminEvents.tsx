@@ -190,7 +190,7 @@ const SuperAdminEvents = () => {
       </div>
 
       {/* Event Modal */}
-      <EventModal 
+      <EventModal  
         key={selectedEvent?.id || "new-event"} // Forces re-mount to reset internal form state
         isOpen={isModalOpen} 
         onClose={() => setIsModalOpen(false)} 

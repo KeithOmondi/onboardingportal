@@ -3,7 +3,7 @@ import { Outlet } from 'react-router-dom';
 import AdminSidebar from './SuperAdminSidebar';
 import AdminHeader from './SuperAdminHeader';
 
-const AdminLayout = () => {
+const SuperAdminLayout = () => {
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
   return (
@@ -40,4 +40,4 @@ const AdminLayout = () => {
   );
 };
 
-export default AdminLayout;
+export default SuperAdminLayout;

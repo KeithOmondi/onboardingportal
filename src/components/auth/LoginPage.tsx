@@ -1,10 +1,11 @@
 import React, { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { Mail, Lock, Loader2, AlertCircle, Eye, EyeOff } from "lucide-react";
+import { Mail, Lock, Loader2, Eye, EyeOff } from "lucide-react";
 import { useAppDispatch, useAppSelector } from "../../redux/hooks";
 import { clearErrors, login } from "../../redux/slices/authSlice";
 import { UserRole } from "../../interfaces/user.interface";
 import JOB_LOGO from "../../assets/JOB_LOGO.jpg";
+import toast from "react-hot-toast";
 
 const LoginPage = () => {
   const [email, setEmail] = useState("");
@@ -19,16 +20,42 @@ const LoginPage = () => {
 
   useEffect(() => {
     if (error) {
+      toast.error(error, {
+        id: 'login-error', // Prevents duplicate toasts
+        style: {
+          borderRadius: '12px',
+          background: '#1a3a2a',
+          color: '#fff',
+          fontSize: '12px',
+          fontWeight: 'bold',
+          textTransform: 'uppercase',
+          letterSpacing: '0.1em',
+          border: '1px solid #C9922A'
+        },
+        iconTheme: {
+          primary: '#C9922A',
+          secondary: '#fff',
+        },
+      });
       const timer = setTimeout(() => dispatch(clearErrors()), 5000);
       return () => clearTimeout(timer);
     }
 
     if (mustResetPassword) {
+      toast.success("Password update required.");
       navigate("/update-password");
       return;
     }
 
     if (isAuthenticated) {
+      toast.success(`Welcome Back, ${user?.full_name || 'Justice'}`, {
+        style: {
+          borderRadius: '12px',
+          background: '#1a3a2a',
+          color: '#fff',
+        }
+      });
+
       switch (user?.role) {
         case UserRole.SUPER_ADMIN:
         case UserRole.ADMIN:
@@ -41,7 +68,7 @@ const LoginPage = () => {
           navigate("/registrar/dashboard");
           break;
         case UserRole.STAFF:
-          navigate("/staff/dashboard");
+          navigate("/admin/dashboard");
           break;
         default:
           navigate("/dashboard");
@@ -120,13 +147,6 @@ const LoginPage = () => {
               Enter your email and password to login.
             </p>
           </div>
-
-          {error && (
-            <div className="mb-6 flex items-center gap-3 p-4 bg-red-50 border-l-4 border-red-600 text-red-800 rounded-r-xl animate-in fade-in slide-in-from-top-2 duration-300">
-              <AlertCircle size={18} className="shrink-0 text-red-600" />
-              <p className="text-sm font-bold uppercase tracking-wide">{error}</p>
-            </div>
-          )}
 
           <form className="space-y-5" onSubmit={handleSubmit}>
             <div>

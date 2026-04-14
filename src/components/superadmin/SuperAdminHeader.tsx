@@ -1,11 +1,11 @@
 import { Bell, User, Menu } from 'lucide-react';
 import { useAppSelector } from '../../redux/hooks';
 
-interface AdminHeaderProps {
+interface SuperAdminHeaderProps {
   onMenuToggle: () => void;
 }
 
-const AdminHeader = ({ onMenuToggle }: AdminHeaderProps) => {
+const SuperAdminHeader = ({ onMenuToggle }: SuperAdminHeaderProps) => {
   const { user } = useAppSelector((state) => state.auth);
 
   return (
@@ -76,4 +76,4 @@ const AdminHeader = ({ onMenuToggle }: AdminHeaderProps) => {
   );
 };
 
-export default AdminHeader;
+export default SuperAdminHeader;

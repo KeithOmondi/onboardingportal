@@ -2,35 +2,44 @@ import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-d
 import { useEffect } from 'react';
 import { useAppDispatch, useAppSelector } from './redux/hooks';
 import { UserRole } from './interfaces/user.interface';
-import AdminLayout from './components/admin/SuperAdminLayout';
 import JudgeLayout from './components/judge/JudgeLayout';
 import ProtectedRoute from './routes/ProtectedRoute';
 import Login from './pages/auth/Login';
 import UpdatePassword from './pages/auth/UpdatePassword';
-import AdminDashboard from './pages/admin/SuperAdminDashboard';
-import AdminUsers from './pages/admin/SuperAdminUsers';
-import SuperAdminInfo from './pages/admin/SuperAdminInfo';
+import AdminUsers from './pages/superadmin/SuperAdminUsers';
+import SuperAdminInfo from './pages/superadmin/SuperAdminInfo';
 import JudgeDashboard from './pages/judge/JudgeDashboard';
 import JudgeInfo from './pages/judge/JudgeInfo';
 import { loadUser } from './redux/slices/authSlice';
 import JudgeOathInfo from './pages/judge/JudgeOathInfo';
 import JudgeGuest from './pages/judge/JudgeGuest';
-import SuperAdminGuests from './pages/admin/SuperAdminGuests';
-import SuperAdminOath from './pages/admin/SuperAdminOath';
-import SuperAdminNotice from './pages/admin/SuperAdminNotice';
+import SuperAdminGuests from './pages/superadmin/SuperAdminGuests';
+import SuperAdminOath from './pages/superadmin/SuperAdminOath';
+import SuperAdminNotice from './pages/superadmin/SuperAdminNotice';
 import JudgeNotice from './pages/judge/JudgeNotice';
 import JudgeEvents from './pages/judge/JudgeEvents';
-import SuperAdminEvents from './pages/admin/SuperAdminEvents';
+import SuperAdminEvents from './pages/superadmin/SuperAdminEvents';
 import JudgeGallery from './pages/judge/JudgeGallery';
-import SuperAdminGallery from './pages/admin/SuperAdminGallery';
+import SuperAdminGallery from './pages/superadmin/SuperAdminGallery';
 import ChatButton from './components/ChatButton';
-import SuperAdminMessages from './pages/admin/SuperAdminMessages';
 import RegistrarLayout from './components/registrars/RegistrarLayout';
 import RegistrarDashboard from './pages/registrar/RegistrarDashboard';
 import RegistrarInfo from './pages/registrar/RegistrarInfo';
 import RegistrarNotice from './pages/registrar/RegistrarNotice';
 import RegistrarEvents from './pages/registrar/RegistrarEvents';
 import RegistrarGallery from './pages/registrar/RegistrarGallery';
+import SuperAdminMessages from './pages/superadmin/SuperAdminMessages';
+import SuperAdminDashboard from './pages/superadmin/SuperAdminDashboard';
+import AdminDashboard from './pages/admin/AdminDashboard';
+import AdminLayout from './components/admin/AdminLayout';
+import SuperAdminLayout from './components/superadmin/SuperAdminLayout';
+import AdminInfo from './pages/admin/AdminInfo';
+import AdminOath from './pages/admin/AdminOath';
+import AdminGuests from './pages/admin/AdminGuest';
+import AdminNotice from './pages/admin/AdminNotice';
+import AdminEvents from './pages/admin/AdminEvents';
+import AdminGallery from './pages/admin/AdminGallery';
+import AdminMessages from './pages/admin/AdminMessages';
 
 const App = () => {
   const dispatch = useAppDispatch();
@@ -53,14 +62,14 @@ const App = () => {
         />
         <Route path="/update-password" element={<UpdatePassword />} />
 
-        {/* --- Admin Portal --- */}
+        {/* --- SuperAdmin Portal --- */}
         <Route
           element={
-            <ProtectedRoute allowedRoles={[UserRole.SUPER_ADMIN, UserRole.ADMIN]} />
+            <ProtectedRoute allowedRoles={[UserRole.SUPER_ADMIN]} />
           }
         >
-          <Route element={<AdminLayout />}>
-            <Route path="/superadmin/dashboard" element={<AdminDashboard />} />
+          <Route element={<SuperAdminLayout />}>
+            <Route path="/superadmin/dashboard" element={<SuperAdminDashboard />} />
             <Route path="/superadmin/highcourtinformation" element={<SuperAdminInfo />} />
             <Route path="/superadmin/oath" element={<SuperAdminOath />} />
             <Route path="/superadmin/guest-list" element={<SuperAdminGuests />} />
@@ -70,6 +79,24 @@ const App = () => {
             <Route path="/superadmin/messages" element={<SuperAdminMessages />} />
             <Route path="/superadmin/users" element={<AdminUsers />} />
             <Route path="/superadmin/settings" element={<div className="p-6">System Configurations</div>} />
+          </Route>
+        </Route>
+
+        {/* --- Admin Portal --- */}
+        <Route
+          element={
+            <ProtectedRoute allowedRoles={[UserRole.ADMIN]} />
+          }
+        >
+          <Route element={<AdminLayout />}>
+            <Route path="/admin/dashboard" element={<AdminDashboard />} />
+            <Route path="/admin/info" element={<AdminInfo />} />
+            <Route path="/admin/oath" element={<AdminOath />} />
+            <Route path="/admin/guest-list" element={<AdminGuests />} />
+            <Route path="/admin/notice-board" element={<AdminNotice />} />
+            <Route path="/admin/events-board" element={<AdminEvents />} />
+            <Route path="/admin/admin-gallery" element={<AdminGallery />} />
+            <Route path="/admin/messages" element={<AdminMessages />} />
           </Route>
         </Route>
 
@@ -107,16 +134,19 @@ const App = () => {
         </Route>
 
         {/* --- Root redirect --- */}
-        <Route
+        {/* --- Root redirect --- */}
+<Route
   path="/"
   element={
     !isAuthenticated ? (
       <Navigate to="/login" replace />
-    ) : isAdmin ? (
+    ) : user?.role === UserRole.SUPER_ADMIN ? (
       <Navigate to="/superadmin/dashboard" replace />
+    ) : user?.role === UserRole.ADMIN ? (
+      <Navigate to="/admin/dashboard" replace />
     ) : user?.role === UserRole.JUDGE ? (
       <Navigate to="/judge/dashboard" replace />
-    ) : user?.role === UserRole.REGISTRAR ? ( // Add this block
+    ) : user?.role === UserRole.REGISTRAR ? (
       <Navigate to="/registrar/dashboard" replace />
     ) : (
       <Navigate to="/login" replace />
