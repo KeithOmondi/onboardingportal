@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, useCallback } from "react";
+import { useEffect, useRef, useState, useCallback, useMemo } from "react";
 import { useAppSelector } from "../redux/hooks";
 import { useChat, type ChatMessage } from "./useChat";
 import api from "../api/api";
@@ -109,13 +109,11 @@ export const useAdminChat = () => {
       updateRecipientActivity(payload.conversationId, payload.lastMessageAt, isIncoming);
     });
 
-    // Confirmed delivery of admin's own sent message
     socket.on("admin:message:sent", (confirmed: ChatMessage) => {
       if (
         confirmed.recipient_type === "broadcast" ||
         confirmed.recipient_type === "group"
       ) {
-        // Swap the optimistic bubble in the broadcast live list
         setLiveBroadcasts((prev) => confirmMessage(prev, confirmed));
         return;
       }
@@ -129,7 +127,6 @@ export const useAdminChat = () => {
       }
     });
 
-    // Incoming message from a user OR a broadcast/group received by admin room
     socket.on("admin:receive", (msg: ChatMessage) => {
       if (
         msg.recipient_type === "broadcast" ||
@@ -158,26 +155,25 @@ export const useAdminChat = () => {
     };
   }, [user, updateRecipientActivity]);
 
-  // ── Fetch recipients ─────────────────────────────────────────
   const fetchRecipients = useCallback(async () => {
-    try {
-      const { data } = await api.get("/chat/recipients");
-      const normalised: Recipient[] = (data.recipients as Recipient[]).map((r) => ({
-        ...r,
-        lastMessageAt: r.lastMessageAt ? new Date(r.lastMessageAt) : undefined,
-        unreadCount: 0,
-      }));
-      setRecipients(normalised);
-    } catch (err) {
-      console.error("[useAdminChat] fetchRecipients failed:", err);
-    }
-  }, []);
+  try {
+    const { data } = await api.get("/chat/recipients");
+    const normalised: Recipient[] = (data.recipients as Recipient[]).map((r) => ({
+      ...r,
+      // DB returns the column alias as "lastMessageAt" (quoted in SQL, so case-preserved)
+      lastMessageAt: r.lastMessageAt ? new Date(r.lastMessageAt) : undefined,
+      unreadCount: 0,
+    }));
+    setRecipients(normalised);
+  } catch (err) {
+    console.error("[useAdminChat] fetchRecipients failed:", err);
+  }
+}, []);
 
   useEffect(() => {
     fetchRecipients();
   }, [fetchRecipients]);
 
-  // ── Fetch broadcast history ───────────────────────────────────
   const fetchBroadcasts = useCallback(async () => {
     setLoadingBroadcasts(true);
     try {
@@ -191,7 +187,6 @@ export const useAdminChat = () => {
     }
   }, []);
 
-  // ── Select a recipient ───────────────────────────────────────
   const selectRecipient = useCallback(async (recipient: Recipient) => {
     setSelectedRecipient(recipient);
     setLiveMessages([]);
@@ -212,13 +207,11 @@ export const useAdminChat = () => {
     }
   }, []);
 
-  // ── Send to single user ──────────────────────────────────────
   const sendToUser = useCallback(
     (message: string, recipientId: string) => {
       if (!socketRef.current || !user) return;
 
       const _tempId = crypto.randomUUID();
-
       const optimistic: ChatMessage = {
         _tempId,
         sender_id: user.id,
@@ -245,7 +238,6 @@ export const useAdminChat = () => {
     [user]
   );
 
-  // ── Broadcast / group ────────────────────────────────────────
   const sendBroadcast = useCallback(
     (
       message: string,
@@ -256,8 +248,6 @@ export const useAdminChat = () => {
       if (!socketRef.current || !user) return;
 
       const _tempId = crypto.randomUUID();
-
-      // Optimistic bubble for broadcast tab
       const optimistic: ChatMessage = {
         _tempId,
         sender_id: user.id,
@@ -289,41 +279,54 @@ export const useAdminChat = () => {
     [user]
   );
 
-  // ── Merge history + live, deduplicated ───────────────────────
-  const conversationMessages: ChatMessage[] = (() => {
+  // ── Unified Merge & Sort Logic ───────────────────────────────
+  
+  const conversationMessages = useMemo(() => {
     const seenIds = new Set<string>();
-    const result: ChatMessage[] = [];
-    for (const msg of [...history, ...liveMessages]) {
-      const key = msg.id ?? msg._tempId;
-      if (!key) { result.push(msg); continue; }
-      if (seenIds.has(key)) continue;
-      seenIds.add(key);
-      result.push(msg);
-    }
-    return result;
-  })();
+    const combined = [...history, ...liveMessages];
+    
+    return combined
+      .filter((msg) => {
+        const key = msg.id ?? msg._tempId;
+        if (!key) return true;
+        if (seenIds.has(key)) return false;
+        seenIds.add(key);
+        return true;
+      })
+      .sort((a, b) => {
+        const tA = a.created_at ? new Date(a.created_at).getTime() : 0;
+        const tB = b.created_at ? new Date(b.created_at).getTime() : 0;
+        return tA - tB;
+      });
+  }, [history, liveMessages]);
 
-  // ── Merge broadcast history + live, deduplicated ─────────────
-  const broadcastMessages: ChatMessage[] = (() => {
+  const broadcastMessages = useMemo(() => {
     const seenIds = new Set<string>();
-    const result: ChatMessage[] = [];
-    for (const msg of [...broadcastHistory, ...liveBroadcasts]) {
-      const key = msg.id ?? msg._tempId;
-      if (!key) { result.push(msg); continue; }
-      if (seenIds.has(key)) continue;
-      seenIds.add(key);
-      result.push(msg);
-    }
-    // Chronological for display (history comes DESC from DB, reverse it)
-    return result.reverse();
-  })();
+    const combined = [...broadcastHistory, ...liveBroadcasts];
+    
+    return combined
+      .filter((msg) => {
+        const key = msg.id ?? msg._tempId;
+        if (!key) return true;
+        if (seenIds.has(key)) return false;
+        seenIds.add(key);
+        return true;
+      })
+      .sort((a, b) => {
+        const tA = a.created_at ? new Date(a.created_at).getTime() : 0;
+        const tB = b.created_at ? new Date(b.created_at).getTime() : 0;
+        return tA - tB;
+      });
+  }, [broadcastHistory, liveBroadcasts]);
 
-  const sortedRecipients = [...recipients].sort((a, b) => {
-    const tA = a.lastMessageAt?.getTime() ?? 0;
-    const tB = b.lastMessageAt?.getTime() ?? 0;
-    if (tB !== tA) return tB - tA;
-    return a.full_name.localeCompare(b.full_name);
-  });
+  const sortedRecipients = useMemo(() => {
+    return [...recipients].sort((a, b) => {
+      const tA = a.lastMessageAt?.getTime() ?? 0;
+      const tB = b.lastMessageAt?.getTime() ?? 0;
+      if (tB !== tA) return tB - tA;
+      return a.full_name.localeCompare(b.full_name);
+    });
+  }, [recipients]);
 
   return {
     recipients: sortedRecipients,
@@ -335,7 +338,6 @@ export const useAdminChat = () => {
     currentUser: user,
     sendToUser,
     sendBroadcast,
-    // ── broadcast ──
     broadcastMessages,
     loadingBroadcasts,
     fetchBroadcasts,
