@@ -10,10 +10,20 @@ export interface Recipient {
   email: string;
   role: string;
   avatar_url?: string;
-  lastMessageAt?: string | Date; // Added to track sorting
+  lastMessageAt?: string | Date;
 }
 
-const SOCKET_URL = import.meta.env.VITE_SOCKET_URL || "http://localhost:8000";
+/**
+ * Fix: Derives the Socket URL from VITE_API_URL if VITE_SOCKET_URL is missing.
+ */
+const getSocketUrl = () => {
+  if (import.meta.env.VITE_SOCKET_URL) return import.meta.env.VITE_SOCKET_URL;
+  const apiUrl = import.meta.env.VITE_API_URL;
+  if (apiUrl) return apiUrl.split('/api')[0];
+  return "http://localhost:8000";
+};
+
+const SOCKET_URL = getSocketUrl();
 
 const confirmMessage = (prev: ChatMessage[], confirmed: ChatMessage): ChatMessage[] => {
   if (confirmed._tempId) {
@@ -44,7 +54,6 @@ export const useAdminChat = () => {
   const selectedRecipientRef = useRef<Recipient | null>(null);
   selectedRecipientRef.current = selectedRecipient;
 
-  // Helper to bump a user to the top of the list
   const bumpRecipient = useCallback((userId: string, timestamp: string | Date) => {
     setRecipients((prev) => {
       const index = prev.findIndex((r) => r.id === userId);
@@ -56,37 +65,35 @@ export const useAdminChat = () => {
     });
   }, []);
 
-  // ── Socket setup ──────────────────────────────────────────────────────────
+  // ── Socket setup with PNA/CORS Fix ──────────────────────────────────────────
   useEffect(() => {
     if (!user?.full_name) return;
 
     const socket = io(SOCKET_URL, {
       query: { userId: user.id, role: user.role, name: user.full_name },
       withCredentials: true,
+      /**
+       * CRITICAL FIX: Force WebSockets to bypass CORS loopback restrictions
+       * when calling a local/private backend from a public Vercel frontend.
+       */
+      transports: ["websocket", "polling"],
     });
     socketRef.current = socket;
 
     socket.on("admin:message:sent", (confirmed: ChatMessage) => {
-      // If the confirmed message belongs to the open chat, update the view
       const partner = selectedRecipientRef.current;
       if (partner && (confirmed.sender_id === partner.id || confirmed.recipient_id === partner.id)) {
         setLiveMessages((prev) => confirmMessage(prev, confirmed));
       }
-      // Always bump the recipient in the sidebar list
       const targetId = confirmed.recipient_id;
       if (targetId) bumpRecipient(targetId, confirmed.created_at || new Date());
     });
 
     socket.on("admin:receive", (msg: ChatMessage) => {
       const partner = selectedRecipientRef.current;
-      
-      // 1. If it's the person we are currently talking to, add to chat view
       if (partner && (msg.sender_id === partner.id || msg.recipient_id === partner.id)) {
         setLiveMessages((prev) => confirmMessage(prev, msg));
       }
-
-      // 2. WhatsApp logic: Always update the recipient's "lastMessageAt" 
-      // so the UI can sort them to the top.
       bumpRecipient(msg.sender_id, msg.created_at || new Date());
     });
 
@@ -99,11 +106,9 @@ export const useAdminChat = () => {
     };
   }, [user, bumpRecipient]);
 
-  // ── Fetch all messageable users ───────────────────────────────────────────
   const fetchRecipients = useCallback(async () => {
     try {
       const { data } = await api.get("/chat/recipients");
-      // Initial list from server
       setRecipients(data.recipients);
     } catch (err) {
       console.error("[useAdminChat] fetchRecipients failed:", err);
@@ -114,7 +119,6 @@ export const useAdminChat = () => {
     fetchRecipients();
   }, [fetchRecipients]);
 
-  // ── Select recipient → load REST history ──────────────────────────────────
   const selectRecipient = useCallback(async (recipient: Recipient) => {
     setSelectedRecipient(recipient);
     setLiveMessages([]);
@@ -130,7 +134,6 @@ export const useAdminChat = () => {
     }
   }, []);
 
-  // ── Send direct message ───────────────────────────────────────────────────
   const sendToUser = useCallback(
     (message: string, recipientId: string) => {
       if (!socketRef.current || !user) return;
@@ -150,8 +153,6 @@ export const useAdminChat = () => {
       };
 
       setLiveMessages((prev) => [...prev, optimistic]);
-      
-      // Bump the user to top immediately (Optimistic UI)
       bumpRecipient(recipientId, now);
 
       socketRef.current.emit("admin:message:single", {
@@ -167,7 +168,6 @@ export const useAdminChat = () => {
     [user, bumpRecipient]
   );
 
-  // ── Send broadcast / group message ────────────────────────────────────────
   const sendBroadcast = useCallback(
     (message: string, type: "broadcast" | "group", targetRoles?: string[], targetUserIds?: string[]) => {
       if (!socketRef.current || !user) return;
