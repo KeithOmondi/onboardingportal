@@ -49,7 +49,8 @@ export const useChat = () => {
 
   // 1. Fetch History
   useEffect(() => {
-    if (!user) return;
+    // Only fetch if we have a valid user and a role
+    if (!user?.id || !user?.role) return;
 
     const fetchHistory = async () => {
       setLoading(true);
@@ -62,8 +63,16 @@ export const useChat = () => {
           api.get("/chat/broadcast/history")
         ]);
 
-        setMessages(directRes.data.messages ?? []);
-        setBroadcastMessages(broadcastRes.data.messages ?? []);
+        // Backend response shape: { status: "success", messages: [...] }
+        const directData = directRes.data?.messages || [];
+        const broadcastData = broadcastRes.data?.messages || [];
+
+        // DEBUG: This will show you exactly what's being loaded into state
+        console.log(`[useChat] Fetched ${directData.length} messages for ${user.role}`);
+        if (directData.length > 0) console.table(directData);
+
+        setMessages(directData);
+        setBroadcastMessages(broadcastData);
       } catch (err) {
         console.error("[useChat] History fetch failed:", err);
       } finally {
@@ -72,39 +81,41 @@ export const useChat = () => {
     };
 
     fetchHistory();
-  }, [user]);
+  }, [user?.id, user?.role]); 
 
   // 2. Socket Setup
   useEffect(() => {
-    if (!user?.full_name) return;
+    if (!user?.id || !user?.role || !user?.full_name) return;
 
-    socketRef.current = io(SOCKET_URL, {
-      query: { userId: user.id, role: user.role, name: user.full_name },
+    const socket = io(SOCKET_URL, {
+      query: { 
+        userId: user.id, 
+        role: user.role, 
+        name: user.full_name 
+      },
       withCredentials: true,
       transports: ["websocket", "polling"],
     });
 
-    socketRef.current.on("connect", () => setConnected(true));
-    socketRef.current.on("disconnect", () => setConnected(false));
+    socketRef.current = socket;
 
-    // Listen for Direct Messages
-    socketRef.current.on("user:receive", (msg: ChatMessage) => {
+    socket.on("connect", () => setConnected(true));
+    socket.on("disconnect", () => setConnected(false));
+
+    socket.on("user:receive", (msg: ChatMessage) => {
       setMessages((prev) => mergeMessage(prev, msg));
       if (!isChatOpenRef.current) setUnreadCount((n) => n + 1);
     });
 
-    // Listen for Broadcasts (matches new Backend event)
-    socketRef.current.on("broadcast:receive", (msg: ChatMessage) => {
+    socket.on("broadcast:receive", (msg: ChatMessage) => {
       setBroadcastMessages((prev) => mergeMessage(prev, msg));
       if (!isChatOpenRef.current) setUnreadCount((n) => n + 1);
     });
 
-    // Admin inbound (for Admin panel use)
-    socketRef.current.on("admin:receive", (msg: ChatMessage) => {
+    socket.on("admin:receive", (msg: ChatMessage) => {
       setMessages((prev) => mergeMessage(prev, msg));
     });
 
-    // Confirmation Logic: Replaces optimistic temp message with real DB message
     const handleSentSwap = (msg: ChatMessage) => {
       const targetSetter = msg.recipient_type === "single" ? setMessages : setBroadcastMessages;
       targetSetter((prev) => {
@@ -113,17 +124,18 @@ export const useChat = () => {
       });
     };
 
-    socketRef.current.on("user:message:sent", handleSentSwap);
-    socketRef.current.on("admin:message:sent", handleSentSwap);
+    socket.on("user:message:sent", handleSentSwap);
+    socket.on("admin:message:sent", handleSentSwap);
 
-    socketRef.current.on("user:message:error", ({ _tempId }: { _tempId: string }) => {
+    socket.on("user:message:error", ({ _tempId }: { _tempId: string }) => {
       setMessages((prev) => prev.filter((m) => m._tempId !== _tempId));
     });
 
     return () => {
-      socketRef.current?.disconnect();
+      socket.disconnect();
+      socketRef.current = null;
     };
-  }, [user]);
+  }, [user?.id, user?.role, user?.full_name]);
 
   // 3. Actions
   const sendMessage = (message: string) => {
