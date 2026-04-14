@@ -3,7 +3,8 @@ import { useAppDispatch, useAppSelector } from "../../redux/hooks";
 import { fetchEvents } from "../../redux/slices/eventsSlice";
 import { adminFetchNotices } from "../../redux/slices/noticeSlice";
 import { adminGetAllRegistries } from "../../redux/slices/guestSlice";
-import { fetchAlbums } from "../../redux/slices/gallerySlice";
+import { fetchGallery } from "../../redux/slices/gallerySlice"; // Updated Import
+import { MediaType } from "../../interfaces/gallery.interface"; // Updated Import
 import type { IJudicialEvent } from "../../interfaces/events.interface";
 import type { IAdminNotice } from "../../interfaces/notices.interface";
 import type { IAdminRegistryRow } from "../../interfaces/guests.interface";
@@ -46,8 +47,8 @@ const NOTICE_CATEGORY_STYLE: Record<string, { bg: string; text: string }> = {
 };
 
 const REGISTRY_STATUS_STYLE: Record<string, { bg: string; text: string }> = {
-  SUBMITTED: { bg: "#f0fdf4", text: "#166534" }, // Success Green
-  DRAFT: { bg: "#fffbeb", text: "#92400e" }, // Amber
+  SUBMITTED: { bg: "#f0fdf4", text: "#166534" },
+  DRAFT: { bg: "#fffbeb", text: "#92400e" },
 };
 
 // ── Sub-components ────────────────────────────────────────────────────────────
@@ -141,13 +142,13 @@ const SuperAdminDashboard = () => {
   const { events, loading: eventsLoading } = useAppSelector((state) => state.events);
   const { adminNotices, loading: noticesLoading } = useAppSelector((state) => state.notices);
   const { admin: { allLists: registries, loading: registriesLoading } } = useAppSelector((state) => state.guests);
-  const { albums, loading: albumsLoading } = useAppSelector((state) => state.gallery);
+  const { items, loading: galleryLoading } = useAppSelector((state) => state.gallery);
 
   useEffect(() => {
     dispatch(fetchEvents("ALL"));
     dispatch(adminFetchNotices());
     dispatch(adminGetAllRegistries());
-    dispatch(fetchAlbums(undefined));
+    dispatch(fetchGallery()); // Fetching items instead of albums
   }, [dispatch]);
 
   // ── Derived: events ─────────────────────────────────────────────────────────
@@ -180,21 +181,17 @@ const SuperAdminDashboard = () => {
     .sort((a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime())
     .slice(0, 5);
 
-  // ── Derived: gallery ──────────────────────────────────────────────
-  const totalAlbums = albums.length;
-  const totalMediaCount = albums.reduce((sum, a) => {
-    const counts = a.media_counts || { images: 0, videos: 0, docs: 0 };
-    return sum + (counts.images + counts.videos + counts.docs);
-  }, 0);
+  // ── Derived: gallery (Updated for Items) ────────────────────────────────────
+  const totalMediaItems = items.length;
+  const imageCount = items.filter(i => i.file_type === MediaType.IMAGE).length;
+  const videoCount = items.filter(i => i.file_type === MediaType.VIDEO).length;
 
-  const dynamicCategories = Array.from(new Set(albums.map(a => a.category)));
-  const albumsByCategory = dynamicCategories.map((cat) => ({
-    label: cat,
-    count: albums.filter((a) => a.category === cat).length,
-  })).sort((a, b) => b.count - a.count).slice(0, 5);
+  const latestMedia = [...items].sort((a, b) => 
+    new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+  )[0];
 
   // ── Loading & Greeting ──────────────────────────────────────────────────────
-  const loading = eventsLoading || noticesLoading || registriesLoading || albumsLoading;
+  const loading = eventsLoading || noticesLoading || registriesLoading || galleryLoading;
   const hour = new Date().getHours();
   const greeting = hour < 12 ? "Good morning" : hour < 17 ? "Good afternoon" : "Good evening";
   const displayName = user?.full_name ?? "Super Admin";
@@ -229,19 +226,19 @@ const SuperAdminDashboard = () => {
           label="Active notices"
           value={activeNotices.length}
           sub={urgentCount > 0 ? `${urgentCount} urgent` : `${totalReadCount} total reads`}
-          valueColor="#1e40af" // Blue
+          valueColor="#1e40af"
         />
         <MetricCard
           label="Guest registries"
           value={totalRegistries}
           sub={`${totalGuests} guests total`}
-          valueColor="#1a3a2a" // Judiciary Green
+          valueColor="#1a3a2a"
         />
         <MetricCard
-          label="Gallery media"
-          value={totalMediaCount}
-          sub={`${totalAlbums} albums`}
-          valueColor="#c2a336" // Gold
+          label="Gallery assets"
+          value={totalMediaItems}
+          sub={`${imageCount} images · ${videoCount} videos`}
+          valueColor="#c2a336"
         />
       </div>
 
@@ -342,7 +339,7 @@ const SuperAdminDashboard = () => {
           )}
         </div>
 
-        {/* Registry status */}
+        {/* Registry health */}
         <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm">
           <SectionTitle>Registry health</SectionTitle>
           <div className="flex flex-col gap-4">
@@ -359,34 +356,35 @@ const SuperAdminDashboard = () => {
           )}
         </div>
 
-        {/* Gallery Distribution */}
+        {/* Gallery Distribution (Updated for Items) */}
         <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm">
-          <SectionTitle>Gallery distribution</SectionTitle>
-          <div className="flex flex-col divide-y divide-slate-100">
-            {albumsByCategory.length > 0 ? albumsByCategory.map(({ label, count }) => (
-              <div key={label} className="flex items-center justify-between py-3">
-                <span className="text-[10px] font-black uppercase tracking-widest text-slate-500 truncate">{label}</span>
-                <span className="text-xs font-black text-[#1a3a2a] ml-3 flex-shrink-0">
-                  {count}
-                </span>
-              </div>
-            )) : <p className="text-xs text-slate-400 py-4 text-center italic">No media assets</p>}
+          <SectionTitle>Media distribution</SectionTitle>
+          <div className="flex flex-col gap-4">
+            <ProgressRow 
+              label="Images" 
+              count={imageCount} 
+              total={totalMediaItems} 
+              color="#355E3B" 
+              textColor="#355E3B" 
+            />
+            <ProgressRow 
+              label="Videos" 
+              count={videoCount} 
+              total={totalMediaItems} 
+              color="#c2a336" 
+              textColor="#c2a336" 
+            />
           </div>
 
-          {totalAlbums > 0 && (
-            <div className="mt-4 border-t border-slate-100 pt-4">
-              {(() => {
-                const newest = [...albums].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())[0];
-                return newest ? (
-                  <div className="bg-slate-50 p-3 rounded-xl border border-slate-100">
-                    <p className="text-[9px] font-black text-[#c2a336] uppercase tracking-widest mb-1">Latest Publication</p>
-                    <p className="text-[11px] font-bold text-[#1a3a2a] truncate">{newest.title}</p>
-                    <p className="text-[9px] font-bold text-slate-400 mt-1 uppercase">
-                      {formatDate(newest.created_at)} · {newest.media_counts?.images ?? 0} Assets
-                    </p>
-                  </div>
-                ) : null;
-              })()}
+          {latestMedia && (
+            <div className="mt-6 border-t border-slate-100 pt-4">
+               <div className="bg-slate-50 p-3 rounded-xl border border-slate-100">
+                  <p className="text-[9px] font-black text-[#c2a336] uppercase tracking-widest mb-1">Latest Registry Entry</p>
+                  <p className="text-[11px] font-bold text-[#1a3a2a] truncate">{latestMedia.title}</p>
+                  <p className="text-[9px] font-bold text-slate-400 mt-1 uppercase">
+                    {formatDate(latestMedia.created_at)} · {latestMedia.file_type}
+                  </p>
+                </div>
             </div>
           )}
         </div>

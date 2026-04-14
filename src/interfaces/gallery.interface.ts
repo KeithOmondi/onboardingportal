@@ -1,53 +1,47 @@
 /**
- * Strict media classification using a const object to satisfy 'erasableSyntaxOnly'.
- * Used to determine rendering logic (img vs video tags).
+ * Media Type Constant Object
+ * Using 'as const' makes this a read-only object with literal types
  */
 export const MediaType = {
   IMAGE: "IMAGE",
   VIDEO: "VIDEO",
-  DOCUMENT: "DOCUMENT",
+  DOCUMENT: "DOCUMENT"
 } as const;
 
-// Create a type from the object values for use in interfaces
+/**
+ * MediaType Type Helper
+ * This extracts the values ("IMAGE" | "VIDEO" | "DOCUMENT") from the object above
+ */
 export type MediaType = (typeof MediaType)[keyof typeof MediaType];
 
 /**
- * Base Album interface for the Gallery Grid.
- * Category is a flexible string to allow for any event type.
+ * Main Gallery Item structure matching the PostgreSQL schema
  */
-export interface IGalleryAlbum {
+export interface IGalleryItem {
   id: number;
   title: string;
-  category: string; 
-  description?: string; 
-  event_date: string;   
-  location: string;
-  thumbnail_url: string;
-  media_counts: {       
-    images: number;
-    videos: number;
-    docs: number;
-  };
-  created_at: string;
-  updated_at: string;
-}
-
-/**
- * Individual Media Item interface.
- */
-export interface IGalleryMedia {
-  id: number;
-  album_id: number;
+  description?: string;
   file_url: string;
-  file_type: MediaType; 
-  mime_type: string;    
-  caption?: string;     
-  uploaded_at: string;
+  file_type: MediaType;
+  mime_type: string;
+  created_at: string;
 }
 
 /**
- * Composite interface for the Album Details view.
+ * Redux State structure
  */
-export interface IAlbumWithMedia extends IGalleryAlbum {
-  media: IGalleryMedia[];
+export interface IGalleryState {
+  items: IGalleryItem[];
+  loading: boolean;
+  error: string | null;
+  success: boolean;
+}
+
+/**
+ * Payload for the Create action
+ */
+export interface ICreateGalleryRequest {
+  title: string;
+  description?: string;
+  file: File; 
 }

@@ -2,47 +2,57 @@ import { useEffect, useState } from "react";
 import { 
   Maximize2, X, Search, ShieldCheck,
   Calendar, Tag, AlertCircle, 
-  Film, Image as ImageIcon, LayoutGrid, Loader2, MapPin
+  Film, Image as ImageIcon, LayoutGrid, Loader2, FileText
 } from "lucide-react";
 
-// Import types and constants from your interface file
-import { type IGalleryAlbum, MediaType } from "../../interfaces/gallery.interface";
+import { MediaType, type IGalleryItem } from "../../interfaces/gallery.interface";
 import { useAppDispatch, useAppSelector } from "../../redux/hooks";
-import { fetchAlbums } from "../../redux/slices/gallerySlice";
+import { fetchGallery } from "../../redux/slices/gallerySlice";
 
 const JudgeGallery = () => {
   const dispatch = useAppDispatch();
-  const { albums, loading } = useAppSelector((state) => state.gallery);
+  const { items, loading } = useAppSelector((state) => state.gallery);
 
   // UI States
   const [searchTerm, setSearchTerm] = useState("");
   const [activeCategory, setActiveCategory] = useState<string>("All");
-  const [selectedAlbum, setSelectedAlbum] = useState<IGalleryAlbum | null>(null);
+  const [selectedItem, setSelectedItem] = useState<IGalleryItem | null>(null);
 
-  /**
-   * We use "All" as a UI-only state. 
-   * The other categories are derived directly from your MediaType enum/const.
-   */
+  // Filter options derived from your MediaType constant
   const filterOptions = ["All", ...Object.values(MediaType)];
 
   useEffect(() => {
-    // Only send the category if it's not "All"
-    const categoryParam = activeCategory === "All" ? undefined : activeCategory;
-    dispatch(fetchAlbums(categoryParam));
+    dispatch(fetchGallery());
 
+    // Keeping the registry data fresh
     const pollInterval = setInterval(() => {
-      dispatch(fetchAlbums(categoryParam));
+      dispatch(fetchGallery());
     }, 60000);
 
     return () => clearInterval(pollInterval);
-  }, [dispatch, activeCategory]);
+  }, [dispatch]);
 
-  // Client-side filtering for Search
-  const filteredAlbums = albums.filter((item: IGalleryAlbum) => 
-    item.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    item.description?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    item.location.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  // Client-side filtering
+  const filteredItems = items.filter((item: IGalleryItem) => {
+    const matchesSearch = 
+      item.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      item.description?.toLowerCase().includes(searchTerm.toLowerCase());
+    
+    const matchesCategory = activeCategory === "All" || item.file_type === activeCategory;
+    
+    return matchesSearch && matchesCategory;
+  });
+
+  // Helper to render the correct preview icon based on mime_type
+  const getMediaIcon = (item: IGalleryItem, size = 10) => {
+    if (item.mime_type?.startsWith('video/') || item.file_type === MediaType.VIDEO) {
+      return <Film size={size} />;
+    }
+    if (item.file_type === MediaType.DOCUMENT) {
+      return <FileText size={size} />;
+    }
+    return <ImageIcon size={size} />;
+  };
 
   return (
     <div className="flex flex-col h-full bg-[#F8FAFC] font-sans overflow-hidden">
@@ -55,10 +65,10 @@ const JudgeGallery = () => {
             </div>
             <div>
               <h1 className="font-serif font-bold text-2xl uppercase tracking-tight text-white">
-                gallery
+                Registry Gallery
               </h1>
               <p className="text-[10px] text-[#c2a336] uppercase tracking-[0.3em] font-black">
-                Office of the Registrar High Court
+                Evidence & Archival Media
               </p>
             </div>
           </div>
@@ -67,7 +77,7 @@ const JudgeGallery = () => {
             <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-white/30" size={20} />
             <input 
               type="text"
-              placeholder="Search albums, locations..."
+              placeholder="Search registry media..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               className="w-full bg-white/5 border border-white/10 rounded-2xl pl-12 pr-4 py-4 text-sm text-white placeholder:text-white/20 outline-none focus:ring-2 focus:ring-[#c2a336]/50 focus:bg-white/10 transition-all shadow-inner"
@@ -76,7 +86,7 @@ const JudgeGallery = () => {
         </div>
       </header>
 
-      {/* FILTER BAR - Driven by MediaType Enum */}
+      {/* FILTER BAR */}
       <div className="bg-white border-b border-slate-200 px-8 py-4">
         <div className="max-w-7xl mx-auto flex items-center gap-3 overflow-x-auto pb-2 scrollbar-hide">
           <LayoutGrid size={18} className="text-[#1a3a32] mr-2 shrink-0" />
@@ -99,54 +109,56 @@ const JudgeGallery = () => {
       {/* MAIN CONTENT */}
       <main className="flex-1 overflow-y-auto p-8 bg-slate-50/50">
         <div className="max-w-7xl mx-auto">
-          {loading && albums.length === 0 ? (
+          {loading && items.length === 0 ? (
             <div className="flex flex-col items-center justify-center h-[50vh]">
               <Loader2 size={48} className="text-[#c2a336] animate-spin mb-4" />
               <span className="text-[11px] font-black text-slate-400 uppercase tracking-[0.4em]">Retrieving Data...</span>
             </div>
-          ) : filteredAlbums.length === 0 ? (
+          ) : filteredItems.length === 0 ? (
             <div className="flex flex-col items-center justify-center h-[40vh] text-slate-400 border-2 border-dashed border-slate-200 rounded-3xl">
               <AlertCircle size={48} className="mb-4 opacity-20" />
-              <p className="text-sm font-bold uppercase tracking-widest">No matching entries found</p>
+              <p className="text-sm font-bold uppercase tracking-widest">No matching records</p>
             </div>
           ) : (
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-8">
-              {filteredAlbums.map((album) => (
+              {filteredItems.map((item) => (
                 <div 
-                  key={album.id}
-                  onClick={() => setSelectedAlbum(album)}
+                  key={item.id}
+                  onClick={() => setSelectedItem(item)}
                   className="group bg-white rounded-2xl overflow-hidden shadow-sm border border-slate-200 cursor-pointer hover:shadow-xl hover:-translate-y-1 transition-all duration-300"
                 >
                   <div className="aspect-[4/3] relative bg-slate-900 overflow-hidden">
-                    <img 
-                      src={album.thumbnail_url} 
-                      alt={album.title} 
-                      className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700" 
-                    />
+                    {/* Video Logic using mime_type check */}
+                    {item.mime_type?.startsWith('video/') ? (
+                      <div className="w-full h-full relative">
+                        <video src={item.file_url} className="w-full h-full object-cover opacity-60" />
+                        <div className="absolute inset-0 flex items-center justify-center">
+                          <Film className="text-white/60" size={32} />
+                        </div>
+                      </div>
+                    ) : (
+                      <img 
+                        src={item.file_url} 
+                        alt={item.title} 
+                        className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700" 
+                        loading="lazy"
+                      />
+                    )}
                     
-                    {/* Media Count Overlays using data from media_counts */}
-                    <div className="absolute top-3 right-3 flex flex-col gap-1">
-                      {album.media_counts.videos > 0 && (
-                        <div className="bg-black/60 backdrop-blur-md px-2 py-1 rounded-md text-white text-[10px] flex items-center gap-1">
-                          <Film size={10} /> {album.media_counts.videos}
-                        </div>
-                      )}
-                      {album.media_counts.images > 0 && (
-                        <div className="bg-black/60 backdrop-blur-md px-2 py-1 rounded-md text-white text-[10px] flex items-center gap-1">
-                          <ImageIcon size={10} /> {album.media_counts.images}
-                        </div>
-                      )}
+                    {/* Dynamic Tag */}
+                    <div className="absolute top-3 right-3">
+                      <div className="bg-black/60 backdrop-blur-md px-2 py-1 rounded-md text-white text-[10px] flex items-center gap-1 uppercase font-black">
+                        {getMediaIcon(item)}
+                        {item.file_type}
+                      </div>
                     </div>
 
                     <div className="absolute inset-0 bg-gradient-to-t from-[#1a3a32] via-transparent to-transparent opacity-80" />
                     <div className="absolute bottom-4 left-4 right-4 flex justify-between items-end">
                       <div className="flex-1 min-w-0">
-                         <span className="text-[8px] font-black px-2 py-0.5 rounded uppercase tracking-widest bg-[#c2a336] text-[#1a3a32]">
-                           {album.category}
-                         </span>
-                         <h3 className="text-white font-bold text-sm mt-1 truncate pr-2">{album.title}</h3>
-                         <div className="flex items-center gap-1 text-white/50 text-[10px] mt-0.5">
-                           <MapPin size={10} /> {album.location}
+                         <h3 className="text-white font-bold text-sm mt-1 truncate pr-2 uppercase tracking-tight">{item.title}</h3>
+                         <div className="flex items-center gap-1 text-white/50 text-[10px] mt-0.5 uppercase font-bold">
+                           <Calendar size={10} /> {new Date(item.created_at).toLocaleDateString("en-KE")}
                          </div>
                       </div>
                       <Maximize2 size={18} className="text-white/70 group-hover:text-[#c2a336] transition-colors shrink-0" />
@@ -159,50 +171,63 @@ const JudgeGallery = () => {
         </div>
       </main>
 
-      {/* ALBUM QUICK VIEW MODAL */}
-      {selectedAlbum && (
+      {/* QUICK VIEW MODAL */}
+      {selectedItem && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 md:p-8">
-          <div className="absolute inset-0 bg-[#0F172A]/98 backdrop-blur-xl" onClick={() => setSelectedAlbum(null)} />
+          <div className="absolute inset-0 bg-[#0F172A]/98 backdrop-blur-xl" onClick={() => setSelectedItem(null)} />
           
-          <div className="relative w-full max-w-4xl bg-[#1a3a32] rounded-[2rem] overflow-hidden shadow-2xl border border-white/10 flex flex-col animate-in zoom-in-95 duration-300">
-             <div className="p-8 text-white">
+          <div className="relative w-full max-w-5xl bg-[#1a3a32] rounded-[2rem] overflow-hidden shadow-2xl border border-white/10 flex flex-col md:flex-row animate-in zoom-in-95 duration-300">
+             <div className="flex-1 bg-black flex items-center justify-center min-h-[300px]">
+                {selectedItem.mime_type?.startsWith('video/') ? (
+                  <video src={selectedItem.file_url} controls className="max-w-full max-h-[70vh]" autoPlay />
+                ) : (
+                  <img src={selectedItem.file_url} alt={selectedItem.title} className="max-w-full max-h-[70vh] object-contain" />
+                )}
+             </div>
+
+             <div className="w-full md:w-80 p-8 text-white flex flex-col">
                 <div className="flex justify-between items-start mb-6">
                   <div>
-                    <h2 className="text-3xl font-serif font-bold mb-2">{selectedAlbum.title}</h2>
-                    <p className="text-[#c2a336] text-xs font-black uppercase tracking-widest">{selectedAlbum.location}</p>
+                    <h2 className="text-2xl font-serif font-bold mb-1 uppercase tracking-tight leading-tight">{selectedItem.title}</h2>
+                    <p className="text-[#c2a336] text-[10px] font-black uppercase tracking-[0.2em]">Archival Record</p>
                   </div>
-                  <button onClick={() => setSelectedAlbum(null)} className="p-2 hover:bg-white/10 rounded-full transition-colors">
-                    <X size={24} />
+                  <button onClick={() => setSelectedItem(null)} className="p-2 hover:bg-white/10 rounded-full transition-colors">
+                    <X size={20} />
                   </button>
                 </div>
 
-                <p className="text-slate-300 text-sm mb-8 bg-white/5 p-6 rounded-2xl border border-white/5 italic">
-                  {selectedAlbum.description || "No description provided for this album registry."}
+                <p className="text-slate-300 text-sm mb-8 bg-white/5 p-4 rounded-xl border border-white/5 italic">
+                  {selectedItem.description || "No description provided for this registry asset."}
                 </p>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div className="flex items-center gap-4 p-4 bg-white/5 rounded-2xl">
-                    <Calendar className="text-[#c2a336]" />
+                <div className="space-y-4 mb-8">
+                  <div className="flex items-center gap-4 p-3 bg-white/5 rounded-xl">
+                    <Calendar className="text-[#c2a336]" size={18} />
                     <div>
-                      <p className="text-[9px] text-white/30 uppercase font-black">Event Date</p>
-                      <p className="font-bold">
-                        {new Date(selectedAlbum.event_date).toLocaleDateString("en-KE", { dateStyle: 'full' })}
+                      <p className="text-[8px] text-white/30 uppercase font-black">Entry Date</p>
+                      <p className="text-xs font-bold">
+                        {new Date(selectedItem.created_at).toLocaleDateString("en-KE", { dateStyle: 'medium' })}
                       </p>
                     </div>
                   </div>
-                  <div className="flex items-center gap-4 p-4 bg-white/5 rounded-2xl">
-                    <Tag className="text-[#c2a336]" />
+                  <div className="flex items-center gap-4 p-3 bg-white/5 rounded-xl">
+                    <Tag className="text-[#c2a336]" size={18} />
                     <div>
-                      <p className="text-[9px] text-white/30 uppercase font-black">Registry Category</p>
-                      <p className="font-bold">{selectedAlbum.category}</p>
+                      <p className="text-[8px] text-white/30 uppercase font-black">Classification</p>
+                      <p className="text-xs font-bold uppercase">{selectedItem.file_type} / {selectedItem.mime_type?.split('/')[1]}</p>
                     </div>
                   </div>
                 </div>
 
-                <div className="mt-8 flex gap-4">
-                  <button className="flex-1 bg-[#c2a336] text-[#1a3a32] py-4 rounded-xl font-black text-sm hover:bg-[#d4b54d] transition-all">
-                    OPEN FULL ALBUM
-                  </button>
+                <div className="mt-auto">
+                  <a 
+                    href={selectedItem.file_url} 
+                    target="_blank"
+                    rel="noreferrer"
+                    className="block w-full text-center bg-[#c2a336] text-[#1a3a32] py-4 rounded-xl font-black text-xs hover:bg-[#d4b54d] transition-all uppercase tracking-widest"
+                  >
+                    Open Original
+                  </a>
                 </div>
              </div>
           </div>

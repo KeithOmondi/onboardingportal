@@ -1,166 +1,114 @@
-import {
-  createSlice,
-  createAsyncThunk,
-  type PayloadAction,
-  type AnyAction, // For the matcher predicate
-} from "@reduxjs/toolkit";
-import {
-  type IGalleryAlbum,
-  type IGalleryMedia,
-} from "../../interfaces/gallery.interface";
+import { createSlice, createAsyncThunk, type PayloadAction } from "@reduxjs/toolkit";
+import type { IGalleryItem, IGalleryState } from "../../interfaces/gallery.interface";
 import api from "../../api/api";
-import { AxiosError } from "axios";
+import axios from "axios";
 
-interface BackendError {
-  message: string;
-}
-
-export interface AlbumDetails extends IGalleryAlbum {
-  media: IGalleryMedia[];
-}
-
-interface GalleryState {
-  albums: IGalleryAlbum[];
-  currentAlbum: AlbumDetails | null;
-  loading: boolean;
-  error: string | null;
-  message: string | null;
-}
-
-const initialState: GalleryState = {
-  albums: [],
-  currentAlbum: null,
+const initialState: IGalleryState = {
+  items: [],
   loading: false,
   error: null,
-  message: null,
+  success: false,
 };
 
-// ── Thunks ────────────────────────────────────────────────────────────────────
+// Helper to extract error message safely
+const getErrorMessage = (error: unknown, defaultMessage: string): string => {
+  if (axios.isAxiosError(error)) {
+    return error.response?.data?.message || defaultMessage;
+  }
+  return error instanceof Error ? error.message : defaultMessage;
+};
 
-export const fetchAlbums = createAsyncThunk(
-  "gallery/fetchAlbums",
-  async (category: string | undefined, { rejectWithValue }) => {
+// ── Async Thunks ─────────────────────────────────────────────────────────────
+
+/**
+ * Fetch all gallery items
+ */
+export const fetchGallery = createAsyncThunk(
+  "gallery/fetchAll",
+  async (_, { rejectWithValue }) => {
     try {
-      const url =
-        category && category !== "All"
-          ? `/gallery/albums?category=${encodeURIComponent(category)}`
-          : `/gallery/albums`;
-      const { data } = await api.get<{ data: IGalleryAlbum[] }>(url);
-      return data.data;
-    } catch (error) {
-      const err = error as AxiosError<BackendError>;
-      return rejectWithValue(err.response?.data?.message || "Failed to fetch albums");
+      const { data } = await api.get(`/gallery/get`);
+      return data.data; 
+    } catch (error: unknown) {
+      return rejectWithValue(getErrorMessage(error, "Failed to fetch gallery"));
     }
   }
 );
 
-export const fetchAlbumDetails = createAsyncThunk(
-  "gallery/fetchAlbumDetails",
-  async (id: string | number, { rejectWithValue }) => {
-    try {
-      const { data } = await api.get<{ data: AlbumDetails }>(`/gallery/albums/${id}`);
-      return data.data;
-    } catch (error) {
-      const err = error as AxiosError<BackendError>;
-      return rejectWithValue(err.response?.data?.message || "Failed to fetch album details");
-    }
-  }
-);
-
-export const createNewAlbum = createAsyncThunk(
-  "gallery/createAlbum",
+/**
+ * Create new gallery item (Supports Image/Video via FormData)
+ */
+export const createGalleryItem = createAsyncThunk(
+  "gallery/create",
   async (formData: FormData, { rejectWithValue }) => {
     try {
-      const config = { headers: { "Content-Type": "multipart/form-data" } };
-      const { data } = await api.post<{ data: IGalleryAlbum }>(`/gallery/albums`, formData, config);
+      const { data } = await api.post(`/gallery/create`, formData, {
+        headers: { "Content-Type": "multipart/form-data" },
+      });
       return data.data;
-    } catch (error) {
-      const err = error as AxiosError<BackendError>;
-      return rejectWithValue(err.response?.data?.message || "Failed to create album");
+    } catch (error: unknown) {
+      return rejectWithValue(getErrorMessage(error, "Upload failed"));
     }
   }
 );
 
-export const addMediaToAlbum = createAsyncThunk(
-  "gallery/addMedia",
-  async ({ id, formData }: { id: string | number; formData: FormData }, { rejectWithValue }) => {
+/**
+ * Delete a gallery item by ID
+ */
+export const deleteGalleryItem = createAsyncThunk(
+  "gallery/delete",
+  async (id: number, { rejectWithValue }) => {
     try {
-      const config = { headers: { "Content-Type": "multipart/form-data" } };
-      const { data } = await api.post<{ message: string }>(`/gallery/albums/${id}/media`, formData, config);
-      return data.message;
-    } catch (error) {
-      const err = error as AxiosError<BackendError>;
-      return rejectWithValue(err.response?.data?.message || "Failed to upload media");
-    }
-  }
-);
-
-export const deleteAlbum = createAsyncThunk(
-  "gallery/deleteAlbum",
-  async (id: string | number, { rejectWithValue }) => {
-    try {
-      await api.delete(`/gallery/albums/${id}`);
+      await api.delete(`/gallery/delete/${id}`);
       return id;
-    } catch (error) {
-      const err = error as AxiosError<BackendError>;
-      return rejectWithValue(err.response?.data?.message || "Failed to delete album");
+    } catch (error: unknown) {
+      return rejectWithValue(getErrorMessage(error, "Delete failed"));
     }
   }
 );
 
-// ── Slice ─────────────────────────────────────────────────────────────────────
+// ── Slice ────────────────────────────────────────────────────────────────────
 
 const gallerySlice = createSlice({
   name: "gallery",
   initialState,
   reducers: {
-    clearGalleryErrors: (state) => { state.error = null; },
-    clearGalleryMessage: (state) => { state.message = null; },
-    resetCurrentAlbum: (state) => { state.currentAlbum = null; },
+    clearGalleryStatus: (state) => {
+      state.success = false;
+      state.error = null;
+    },
   },
   extraReducers: (builder) => {
     builder
-      .addCase(fetchAlbums.fulfilled, (state, action: PayloadAction<IGalleryAlbum[]>) => {
-        state.loading = false;
-        state.albums = action.payload;
+      .addCase(fetchGallery.pending, (state) => {
+        state.loading = true;
       })
-      .addCase(fetchAlbumDetails.fulfilled, (state, action: PayloadAction<AlbumDetails>) => {
+      .addCase(fetchGallery.fulfilled, (state, action: PayloadAction<IGalleryItem[]>) => {
         state.loading = false;
-        state.currentAlbum = action.payload;
+        state.items = action.payload;
       })
-      .addCase(createNewAlbum.fulfilled, (state, action: PayloadAction<IGalleryAlbum>) => {
+      .addCase(fetchGallery.rejected, (state, action) => {
         state.loading = false;
-        state.albums.unshift(action.payload);
-        state.message = "Album created successfully";
+        state.error = action.payload as string;
       })
-      .addCase(addMediaToAlbum.fulfilled, (state, action: PayloadAction<string>) => {
+      .addCase(createGalleryItem.pending, (state) => {
+        state.loading = true;
+        state.success = false;
+      })
+      .addCase(createGalleryItem.fulfilled, (state, action: PayloadAction<IGalleryItem>) => {
         state.loading = false;
-        state.message = action.payload;
+        state.success = true;
+        state.items.unshift(action.payload);
       })
-      .addCase(deleteAlbum.fulfilled, (state, action: PayloadAction<string | number>) => {
+      .addCase(createGalleryItem.rejected, (state, action) => {
         state.loading = false;
-        state.albums = state.albums.filter((album) => album.id.toString() !== action.payload.toString());
-        state.message = "Album deleted successfully";
+        state.error = action.payload as string;
       })
-
-      // ── Scoped Matchers ───────────────────────────────────────────────────
-      .addMatcher(
-        (action: AnyAction) => action.type.startsWith("gallery/") && action.type.endsWith("/pending"),
-        (state) => {
-          state.loading = true;
-          state.error = null;
-        }
-      )
-      .addMatcher(
-        (action: AnyAction) => action.type.startsWith("gallery/") && action.type.endsWith("/rejected"),
-        (state, action: PayloadAction<string | undefined>) => {
-          state.loading = false;
-          // action.payload comes from rejectWithValue
-          state.error = action.payload || "An unexpected error occurred";
-        }
-      );
+      .addCase(deleteGalleryItem.fulfilled, (state, action: PayloadAction<number>) => {
+        state.items = state.items.filter((item) => item.id !== action.payload);
+      });
   },
 });
 
-export const { clearGalleryErrors, clearGalleryMessage, resetCurrentAlbum } = gallerySlice.actions;
+export const { clearGalleryStatus } = gallerySlice.actions;
 export default gallerySlice.reducer;
