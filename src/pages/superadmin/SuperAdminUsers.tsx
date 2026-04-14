@@ -2,7 +2,7 @@ import { useEffect, useState, useMemo, useCallback } from 'react';
 import { 
   UserPlus, Search, Trash2, UserCheck, 
   Loader2, ChevronLeft, ChevronRight, X, ShieldAlert,
-  Edit, CheckCircle, Clock
+  Edit, CheckCircle, Clock, Lock
 } from 'lucide-react';
 import { useAppDispatch, useAppSelector } from '../../redux/hooks';
 import { 
@@ -24,6 +24,7 @@ const AdminUsers = () => {
   const [formData, setFormData] = useState({
     full_name: '',
     email: '',
+    password: '', // Added password field
     role: UserRole.STAFF as UserRole,
   });
 
@@ -42,7 +43,6 @@ const AdminUsers = () => {
     return () => { debouncedSearch.cancel(); };
   }, [loadUsers, debouncedSearch]);
 
-  // Clear success/error messages after 3 seconds
   useEffect(() => {
     if (message || error) {
       const timer = setTimeout(() => dispatch(clearUserStatus()), 3000);
@@ -60,10 +60,20 @@ const AdminUsers = () => {
   const handleOpenModal = (user?: IUser) => {
     if (user) {
       setEditingUser(user);
-      setFormData({ full_name: user.full_name, email: user.email, role: user.role });
+      setFormData({ 
+        full_name: user.full_name, 
+        email: user.email, 
+        role: user.role,
+        password: '' // Usually kept empty during edits unless changing it
+      });
     } else {
       setEditingUser(null);
-      setFormData({ full_name: '', email: '', role: UserRole.STAFF });
+      setFormData({ 
+        full_name: '', 
+        email: '', 
+        password: '', 
+        role: UserRole.STAFF 
+      });
     }
     setIsModalOpen(true);
   };
@@ -71,6 +81,7 @@ const AdminUsers = () => {
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (editingUser) {
+      // Logic to modify user (optionally including password if provided)
       dispatch(modifyUser({ id: editingUser.id, ...formData }));
     } else {
       dispatch(onboardUser(formData));
@@ -207,11 +218,11 @@ const AdminUsers = () => {
         </div>
       </div>
 
-      {/* Onboarding / Edit Modal */}
+      {/* Modal */}
       {isModalOpen && (
         <div className="fixed inset-0 z-[100] flex items-center justify-end">
           <div className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm" onClick={() => setIsModalOpen(false)} />
-          <div className="relative w-full max-w-md h-full bg-white shadow-2xl p-8 animate-in slide-in-from-right duration-300">
+          <div className="relative w-full max-w-md h-full bg-white shadow-2xl p-8 animate-in slide-in-from-right duration-300 overflow-y-auto">
             <div className="flex justify-between items-center mb-8">
               <h3 className="text-xl font-serif font-bold text-slate-900 uppercase">{editingUser ? 'Update Profile' : 'New Onboarding'}</h3>
               <button onClick={() => setIsModalOpen(false)} className="p-2 hover:bg-slate-100 rounded-full"><X size={20}/></button>
@@ -239,6 +250,25 @@ const AdminUsers = () => {
                   onChange={(e) => setFormData({...formData, email: e.target.value})}
                 />
               </div>
+
+              {/* Added Password Field */}
+              <div>
+                <label className="block text-[10px] font-black text-slate-400 uppercase mb-2 tracking-widest">
+                  {editingUser ? 'New Password (Optional)' : 'Temporary Access Password'}
+                </label>
+                <div className="relative">
+                  <Lock className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={14} />
+                  <input 
+                    required={!editingUser}
+                    type="password" 
+                    placeholder="••••••••"
+                    className="w-full pl-10 pr-4 py-3 rounded-xl border border-slate-200 focus:ring-2 focus:ring-[#1a3a32] outline-none font-bold text-sm"
+                    value={formData.password}
+                    onChange={(e) => setFormData({...formData, password: e.target.value})}
+                  />
+                </div>
+              </div>
+
               <div>
                 <label className="block text-[10px] font-black text-slate-400 uppercase mb-2 tracking-widest">Assigned Role</label>
                 <select 
@@ -255,7 +285,9 @@ const AdminUsers = () => {
               {!editingUser && (
                 <div className="p-4 bg-amber-50 rounded-xl border border-amber-100 flex gap-3">
                   <ShieldAlert className="text-amber-600 shrink-0" size={18} />
-                  <p className="text-[10px] text-amber-800 font-bold uppercase leading-tight">New users will be prompted to set their permanent password on first login.</p>
+                  <p className="text-[10px] text-amber-800 font-bold uppercase leading-tight">
+                    Officers will be required to change this password upon their first secure registry access.
+                  </p>
                 </div>
               )}
 

@@ -53,7 +53,7 @@ const RegistrarHeader = ({ onMenuToggle }: RegistrarHeaderProps) => {
           <button onClick={() => setIsDropdownOpen(!isDropdownOpen)} className="flex items-center gap-2 sm:gap-3 group focus:outline-none">
             <div className="text-right hidden md:block">
               <p className="text-sm font-bold font-serif uppercase text-white leading-none group-hover:text-[#C5A059] transition-colors">
-                {user?.full_name || "Registrar"}
+             {user?.full_name || "Registrar"}
               </p>
               <p className="text-[10px] font-bold text-[#C5A059] tracking-tighter mt-1">{user?.email}</p>
             </div>

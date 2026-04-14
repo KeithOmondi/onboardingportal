@@ -11,15 +11,26 @@ const formatTime = (timestamp: string | Date | undefined) => {
 
 const ChatButton = () => {
   const [isOpen, setIsOpen] = useState(false);
+  const [activeTab, setActiveTab] = useState<"direct" | "broadcast">("direct");
   const [input, setInput] = useState("");
   const { user } = useAppSelector((state) => state.auth);
-  const { messages, sendMessage, connected, unreadCount, setChatOpen } = useChat();
+  
+  // Destructure from useChat - these will now be recognized by TS
+  const { 
+    messages, 
+    broadcastMessages, 
+    sendMessage, 
+    connected, 
+    unreadCount, 
+    setChatOpen 
+  } = useChat();
+  
   const bottomRef = useRef<HTMLDivElement>(null);
 
   const isAdmin = user?.role === UserRole.ADMIN || user?.role === UserRole.SUPER_ADMIN;
   const isJudge = user?.role === UserRole.JUDGE;
+  const isRegistrar = user?.role === UserRole.REGISTRAR;
 
-  // Keep the hook in sync with open/close so badge logic works correctly
   const handleToggle = () => {
     const next = !isOpen;
     setIsOpen(next);
@@ -28,157 +39,177 @@ const ChatButton = () => {
 
   useEffect(() => {
     if (isOpen) bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages, isOpen]);
+  }, [messages, broadcastMessages, isOpen, activeTab]);
 
   const handleSend = () => {
-    if (!input.trim() || !isJudge) return;
+    // Only Judges can send in Direct. Broadcast is always read-only for recipients.
+    if (!input.trim() || !isJudge || activeTab === "broadcast") return; 
     sendMessage(input.trim());
     setInput("");
   };
 
+  // Switch between Direct and Broadcast arrays based on active tab
+  const displayedMessages = activeTab === "direct" ? messages : broadcastMessages;
+
   return (
-    <div style={{ position: "fixed", bottom: "24px", right: "24px", zIndex: 1000 }}>
-      {/* ── Chat window ──────────────────────────────────────── */}
+    <div style={{ position: "fixed", bottom: "24px", right: "24px", zIndex: 1000, fontFamily: "sans-serif" }}>
       {isOpen && (
         <div style={{
-          width: "320px", height: "420px", background: "#fff",
-          borderRadius: "12px", boxShadow: "0 8px 32px rgba(0,0,0,0.18)",
+          width: "340px", height: "480px", background: "#fff",
+          borderRadius: "16px", boxShadow: "0 12px 40px rgba(0,0,0,0.2)",
           marginBottom: "12px", display: "flex", flexDirection: "column",
-          overflow: "hidden",
+          overflow: "hidden", border: "1px solid #e5e7eb"
         }}>
           {/* Header */}
-          <div style={{
-            background: "#4f46e5", color: "#fff", padding: "14px 16px",
-            display: "flex", justifyContent: "space-between", alignItems: "center",
-          }}>
-            <div>
-              <div style={{ fontWeight: 600 }}>
-                {isAdmin ? "📋 Support Inbox" : "💬 ORHC Team Chat"}
+          <div style={{ background: "#4f46e5", color: "#fff", padding: "16px" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "12px" }}>
+              <div>
+                <div style={{ fontWeight: 800, fontSize: "14px", letterSpacing: "0.5px" }}>
+                  {isAdmin ? "ADMIN HUB" : "ORHC COMMUNICATION"}
+                </div>
+                <div style={{ fontSize: "10px", opacity: 0.8, fontWeight: 600 }}>
+                  {connected ? "● ONLINE" : "○ OFFLINE"}
+                </div>
               </div>
-              <div style={{ fontSize: "11px", opacity: 0.8 }}>
-                {connected ? "🟢 Connected" : "🔴 Disconnected"}
-                {!isAdmin && !isJudge && " • View Only"}
-              </div>
+              <button onClick={handleToggle} style={{ background: "none", border: "none", color: "#fff", cursor: "pointer", fontSize: "20px" }}>✕</button>
             </div>
-            <span onClick={handleToggle} style={{ cursor: "pointer", fontSize: "18px" }}>✕</span>
+
+            {/* Tabs */}
+            <div style={{ display: "flex", background: "rgba(0,0,0,0.1)", borderRadius: "8px", padding: "2px" }}>
+              <button 
+                onClick={() => setActiveTab("direct")}
+                style={{
+                  flex: 1, padding: "8px", fontSize: "11px", fontWeight: 700, borderRadius: "6px", border: "none", cursor: "pointer",
+                  background: activeTab === "direct" ? "#fff" : "transparent",
+                  color: activeTab === "direct" ? "#4f46e5" : "#fff",
+                  transition: "all 0.2s"
+                }}>DIRECT</button>
+              <button 
+                onClick={() => setActiveTab("broadcast")}
+                style={{
+                  flex: 1, padding: "8px", fontSize: "11px", fontWeight: 700, borderRadius: "6px", border: "none", cursor: "pointer",
+                  background: activeTab === "broadcast" ? "#fff" : "transparent",
+                  color: activeTab === "broadcast" ? "#4f46e5" : "#fff",
+                  transition: "all 0.2s"
+                }}>OFFICIAL RELAY</button>
+            </div>
           </div>
 
-          {/* Messages */}
+          {/* Messages Area */}
           <div style={{
-            flex: 1, padding: "12px", overflowY: "auto", background: "#f9f9f9",
-            display: "flex", flexDirection: "column", gap: "8px",
+            flex: 1, padding: "12px", overflowY: "auto", background: "#f8fafc",
+            display: "flex", flexDirection: "column", gap: "10px",
           }}>
-            {messages.map((msg, i) => {
-              const isMine = msg.sender_id === user?.id;
-              return (
-                <div key={msg.id ?? msg._tempId ?? i}
-                  style={{ display: "flex", flexDirection: "column", alignItems: isMine ? "flex-end" : "flex-start" }}>
-                  <div style={{ fontSize: "10px", color: "#999", marginBottom: "2px" }}>
-                    {msg.sender_name} {msg.sender_role === "judge" && "⚖️"}
-                  </div>
-                  <div style={{
-                    background: isMine ? "#4f46e5" : "#e5e7eb",
-                    color: isMine ? "#fff" : "#111",
-                    padding: "8px 12px", borderRadius: "12px",
-                    maxWidth: "80%", fontSize: "13px",
-                    // Slightly faded for unconfirmed optimistic messages
-                    opacity: msg._tempId && !msg.id ? 0.6 : 1,
-                  }}>
-                    {msg.message}
-                  </div>
-                  <div style={{ fontSize: "10px", color: "#bbb", marginTop: "2px" }}>
-                    {formatTime(msg.created_at)}
-                    {/* Show a subtle "sending…" indicator for optimistic messages */}
-                    {msg._tempId && !msg.id && (
-                      <span style={{ marginLeft: "4px", fontStyle: "italic" }}>sending…</span>
+            {displayedMessages.length === 0 ? (
+              <div style={{ textAlign: "center", marginTop: "40px", color: "#94a3b8", fontSize: "12px" }}>
+                No {activeTab === "direct" ? "conversations" : "announcements"} yet.
+              </div>
+            ) : (
+              displayedMessages.map((msg, i) => {
+                const isMine = msg.sender_id === user?.id;
+                const isBroadcastTab = activeTab === "broadcast";
+
+                return (
+                  <div key={msg.id ?? i} style={{ display: "flex", flexDirection: "column", alignItems: isMine ? "flex-end" : "flex-start" }}>
+                    {!isMine && (
+                      <div style={{ fontSize: "10px", color: "#64748b", fontWeight: 700, marginBottom: "2px", textTransform: "uppercase" }}>
+                        {isBroadcastTab ? "📢 SYSTEM RELAY" : `${msg.sender_name} ${msg.sender_role === "judge" ? "⚖️" : ""}`}
+                      </div>
                     )}
+                    <div style={{
+                      background: isBroadcastTab ? "#fefce8" : (isMine ? "#4f46e5" : "#fff"),
+                      color: isBroadcastTab ? "#854d0e" : (isMine ? "#fff" : "#1e293b"),
+                      padding: "10px 14px", borderRadius: "14px",
+                      border: isMine ? "none" : "1px solid #e2e8f0",
+                      maxWidth: "85%", fontSize: "13px", lineHeight: "1.4",
+                      boxShadow: "0 1px 2px rgba(0,0,0,0.05)",
+                      borderLeft: isBroadcastTab ? "4px solid #eab308" : undefined
+                    }}>
+                      {msg.message}
+                    </div>
+                    <div style={{ fontSize: "9px", color: "#94a3b8", marginTop: "4px", fontWeight: 600 }}>
+                      {formatTime(msg.created_at)}
+                    </div>
                   </div>
-                </div>
-              );
-            })}
+                );
+              })
+            )}
             <div ref={bottomRef} />
           </div>
 
-          {/* Input bar — judges only; read-only notice for everyone else */}
-          {!isAdmin && (
-            <div style={{ borderTop: "1px solid #eee", padding: "8px", background: "#fff" }}>
-              {isJudge ? (
-                <div style={{ display: "flex", gap: "6px" }}>
-                  <input
-                    value={input}
-                    onChange={(e) => setInput(e.target.value)}
-                    onKeyDown={(e) => e.key === "Enter" && handleSend()}
-                    placeholder="Type a message…"
-                    style={{
-                      flex: 1, border: "1px solid #ddd", borderRadius: "8px",
-                      padding: "8px", fontSize: "13px", outline: "none",
-                    }}
-                  />
-                  <button
-                    onClick={handleSend}
-                    disabled={!input.trim()}
-                    style={{
-                      background: input.trim() ? "#4f46e5" : "#a5b4fc",
-                      color: "#fff", border: "none", borderRadius: "8px",
-                      padding: "8px 14px", cursor: input.trim() ? "pointer" : "default",
-                      transition: "background 0.2s",
-                    }}
-                  >➤</button>
-                </div>
-              ) : (
-                <div style={{
-                  textAlign: "center", padding: "4px", fontSize: "11px",
-                  color: "#888", fontWeight: 500, fontStyle: "italic",
-                }}>
-                  You have read-only access to this chat.
-                </div>
-              )}
-            </div>
-          )}
+          {/* Footer / Input */}
+          <div style={{ padding: "12px", background: "#fff", borderTop: "1px solid #f1f5f9" }}>
+            {activeTab === "broadcast" ? (
+              <div style={{ textAlign: "center", fontSize: "11px", color: "#64748b", fontWeight: 700, padding: "8px", background: "#fefce8", borderRadius: "8px" }}>
+                LATEST ADMINISTRATIVE ANNOUNCEMENTS
+              </div>
+            ) : isJudge ? (
+              <div style={{ display: "flex", gap: "8px" }}>
+                <input
+                  value={input}
+                  onChange={(e) => setInput(e.target.value)}
+                  onKeyDown={(e) => e.key === "Enter" && handleSend()}
+                  placeholder="Message support..."
+                  style={{
+                    flex: 1, border: "1px solid #e2e8f0", borderRadius: "10px",
+                    padding: "10px", fontSize: "13px", outline: "none", background: "#f8fafc"
+                  }}
+                />
+                <button
+                  onClick={handleSend}
+                  disabled={!input.trim()}
+                  style={{
+                    background: "#4f46e5", color: "#fff", border: "none", borderRadius: "10px",
+                    padding: "0 16px", cursor: "pointer", opacity: input.trim() ? 1 : 0.5
+                  }}
+                >➤</button>
+              </div>
+            ) : (
+              <div style={{ 
+                textAlign: "center", fontSize: "11px", color: "#94a3b8", fontStyle: "italic",
+                padding: "8px", background: "#f8fafc", borderRadius: "8px" 
+              }}>
+                {isRegistrar ? "Registrars have read-only access to direct chat." : "Read-only access."}
+              </div>
+            )}
+          </div>
         </div>
       )}
 
-      {/* ── FAB with unread badge ─────────────────────────────── */}
-      <div style={{ position: "relative", display: "inline-flex" }}>
-        {/* Badge — only shown for judges when chat is closed and there are unreads */}
-        {isJudge && !isOpen && unreadCount > 0 && (
+      {/* FAB with Unread Indicator */}
+      <div style={{ position: "relative" }}>
+        {unreadCount > 0 && !isOpen && (
           <span style={{
-            position: "absolute", top: "-4px", right: "-4px",
-            background: "#ef4444", color: "#fff",
-            fontSize: "11px", fontWeight: 700,
-            borderRadius: "999px",
-            // Keeps single digits circular, wider for 10+
-            minWidth: "20px", height: "20px",
-            padding: "0 5px",
+            position: "absolute", top: "-5px", right: "-5px",
+            background: "#ef4444", color: "#fff", fontSize: "10px", fontWeight: 800,
+            minWidth: "22px", height: "22px", borderRadius: "50%",
             display: "flex", alignItems: "center", justifyContent: "center",
-            boxShadow: "0 1px 4px rgba(0,0,0,0.25)",
-            zIndex: 1,
-            // Subtle pulse to draw attention
-            animation: "badge-pulse 1.5s ease-in-out infinite",
+            boxShadow: "0 2px 8px rgba(239,68,68,0.4)", zIndex: 2,
+            animation: "pulse 2s infinite"
           }}>
-            {unreadCount > 99 ? "99+" : unreadCount}
+            {unreadCount}
           </span>
         )}
-
         <button
           onClick={handleToggle}
           style={{
-            width: "56px", height: "56px", borderRadius: "50%",
+            width: "60px", height: "60px", borderRadius: "50%",
             background: "#4f46e5", color: "#fff", border: "none",
-            fontSize: "24px", cursor: "pointer",
-            boxShadow: "0 4px 16px rgba(79,70,229,0.4)",
-            display: "flex", alignItems: "center", justifyContent: "center",
+            fontSize: "24px", cursor: "pointer", display: "flex",
+            alignItems: "center", justifyContent: "center",
+            boxShadow: "0 4px 20px rgba(79,70,229,0.5)",
+            transition: "transform 0.2s"
           }}
         >
           {isOpen ? "✕" : "💬"}
         </button>
       </div>
 
-      {/* Badge pulse keyframe — injected once */}
       <style>{`
-        @keyframes badge-pulse {
-          0%, 100% { transform: scale(1); }
-          50%       { transform: scale(1.15); }
+        @keyframes pulse {
+          0% { transform: scale(1); box-shadow: 0 0 0 0 rgba(239,68,68, 0.7); }
+          70% { transform: scale(1.1); box-shadow: 0 0 0 10px rgba(239,68,68, 0); }
+          100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(239,68,68, 0); }
         }
       `}</style>
     </div>

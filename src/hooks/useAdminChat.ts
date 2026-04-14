@@ -10,8 +10,8 @@ export interface Recipient {
   email: string;
   role: string;
   avatar_url?: string;
-  lastMessageAt?: Date;   // always a Date internally; never a string
-  unreadCount?: number;   // badge count for admin inbox
+  lastMessageAt?: Date;
+  unreadCount?: number;
 }
 
 interface ConversationUpdatedPayload {
@@ -56,23 +56,21 @@ export const useAdminChat = () => {
   const [history, setHistory] = useState<ChatMessage[]>([]);
   const [liveMessages, setLiveMessages] = useState<ChatMessage[]>([]);
   const [loadingHistory, setLoadingHistory] = useState(false);
-  const socketRef = useRef<Socket | null>(null);
 
-  // Stable ref so socket handlers always read current value without re-registering
+  // ── Broadcast state ──────────────────────────────────────────
+  const [broadcastHistory, setBroadcastHistory] = useState<ChatMessage[]>([]);
+  const [liveBroadcasts, setLiveBroadcasts] = useState<ChatMessage[]>([]);
+  const [loadingBroadcasts, setLoadingBroadcasts] = useState(false);
+
+  const socketRef = useRef<Socket | null>(null);
   const selectedRecipientRef = useRef<Recipient | null>(null);
   selectedRecipientRef.current = selectedRecipient;
 
-  /**
-   * Core helper — called whenever ANY message activity happens for a user.
-   * 
-   * - Updates lastMessageAt → triggers re-sort (recipients sorted in render)
-   * - Increments unreadCount ONLY if that conversation isn't currently open
-   */
   const updateRecipientActivity = useCallback(
     (userId: string, timestamp: string | Date, isIncoming: boolean) => {
       setRecipients((prev) => {
         const idx = prev.findIndex((r) => r.id === userId);
-        if (idx === -1) return prev;                    // unknown user, skip
+        if (idx === -1) return prev;
 
         const isOpen = selectedRecipientRef.current?.id === userId;
         const current = prev[idx];
@@ -80,9 +78,10 @@ export const useAdminChat = () => {
         const updated: Recipient = {
           ...current,
           lastMessageAt: new Date(timestamp),
-          unreadCount: isIncoming && !isOpen
-            ? (current.unreadCount ?? 0) + 1
-            : (current.unreadCount ?? 0),
+          unreadCount:
+            isIncoming && !isOpen
+              ? (current.unreadCount ?? 0) + 1
+              : (current.unreadCount ?? 0),
         };
 
         const next = [...prev];
@@ -104,19 +103,23 @@ export const useAdminChat = () => {
     });
     socketRef.current = socket;
 
-    /**
-     * conversation:updated — the single source of truth for sorting + badges.
-     * Fired by the server after every message regardless of type.
-     */
     socket.on("conversation:updated", (payload: ConversationUpdatedPayload) => {
-      if (payload.recipientType !== "single") return; // broadcast/group don't map to a user row
-
+      if (payload.recipientType !== "single") return;
       const isIncoming = payload.senderId !== user.id;
       updateRecipientActivity(payload.conversationId, payload.lastMessageAt, isIncoming);
     });
 
-    // Confirmed delivery of admin's own sent message → swap optimistic bubble
+    // Confirmed delivery of admin's own sent message
     socket.on("admin:message:sent", (confirmed: ChatMessage) => {
+      if (
+        confirmed.recipient_type === "broadcast" ||
+        confirmed.recipient_type === "group"
+      ) {
+        // Swap the optimistic bubble in the broadcast live list
+        setLiveBroadcasts((prev) => confirmMessage(prev, confirmed));
+        return;
+      }
+
       const partner = selectedRecipientRef.current;
       if (
         partner &&
@@ -126,8 +129,16 @@ export const useAdminChat = () => {
       }
     });
 
-    // Incoming message from a user → add to conversation if it's currently open
+    // Incoming message from a user OR a broadcast/group received by admin room
     socket.on("admin:receive", (msg: ChatMessage) => {
+      if (
+        msg.recipient_type === "broadcast" ||
+        msg.recipient_type === "group"
+      ) {
+        setLiveBroadcasts((prev) => confirmMessage(prev, msg));
+        return;
+      }
+
       const partner = selectedRecipientRef.current;
       if (
         partner &&
@@ -135,21 +146,22 @@ export const useAdminChat = () => {
       ) {
         setLiveMessages((prev) => confirmMessage(prev, msg));
       }
-      // NOTE: sorting + badge is handled by conversation:updated, not here
     });
 
     socket.on("admin:message:error", ({ _tempId }: { _tempId: string }) => {
       setLiveMessages((prev) => prev.filter((m) => m._tempId !== _tempId));
+      setLiveBroadcasts((prev) => prev.filter((m) => m._tempId !== _tempId));
     });
 
-    return () => { socket.disconnect(); };
+    return () => {
+      socket.disconnect();
+    };
   }, [user, updateRecipientActivity]);
 
   // ── Fetch recipients ─────────────────────────────────────────
   const fetchRecipients = useCallback(async () => {
     try {
       const { data } = await api.get("/chat/recipients");
-      // Normalise lastMessageAt to Date on the way in
       const normalised: Recipient[] = (data.recipients as Recipient[]).map((r) => ({
         ...r,
         lastMessageAt: r.lastMessageAt ? new Date(r.lastMessageAt) : undefined,
@@ -161,7 +173,23 @@ export const useAdminChat = () => {
     }
   }, []);
 
-  useEffect(() => { fetchRecipients(); }, [fetchRecipients]);
+  useEffect(() => {
+    fetchRecipients();
+  }, [fetchRecipients]);
+
+  // ── Fetch broadcast history ───────────────────────────────────
+  const fetchBroadcasts = useCallback(async () => {
+    setLoadingBroadcasts(true);
+    try {
+      const { data } = await api.get("/chat/broadcasts");
+      setBroadcastHistory(data.broadcasts ?? []);
+    } catch (err) {
+      console.error("[useAdminChat] fetchBroadcasts failed:", err);
+      setBroadcastHistory([]);
+    } finally {
+      setLoadingBroadcasts(false);
+    }
+  }, []);
 
   // ── Select a recipient ───────────────────────────────────────
   const selectRecipient = useCallback(async (recipient: Recipient) => {
@@ -169,7 +197,6 @@ export const useAdminChat = () => {
     setLiveMessages([]);
     setLoadingHistory(true);
 
-    // Clear badge the moment admin opens the conversation
     setRecipients((prev) =>
       prev.map((r) => (r.id === recipient.id ? { ...r, unreadCount: 0 } : r))
     );
@@ -191,7 +218,6 @@ export const useAdminChat = () => {
       if (!socketRef.current || !user) return;
 
       const _tempId = crypto.randomUUID();
-      const now = new Date();
 
       const optimistic: ChatMessage = {
         _tempId,
@@ -201,7 +227,7 @@ export const useAdminChat = () => {
         recipient_id: recipientId,
         recipient_type: "single",
         message,
-        created_at: now,
+        created_at: new Date(),
       };
 
       setLiveMessages((prev) => [...prev, optimistic]);
@@ -221,11 +247,33 @@ export const useAdminChat = () => {
 
   // ── Broadcast / group ────────────────────────────────────────
   const sendBroadcast = useCallback(
-    (message: string, type: "broadcast" | "group", targetRoles?: string[], targetUserIds?: string[]) => {
+    (
+      message: string,
+      type: "broadcast" | "group",
+      targetRoles?: string[],
+      targetUserIds?: string[]
+    ) => {
       if (!socketRef.current || !user) return;
 
       const _tempId = crypto.randomUUID();
-      const event = type === "broadcast" ? "admin:message:broadcast" : "admin:message:group";
+
+      // Optimistic bubble for broadcast tab
+      const optimistic: ChatMessage = {
+        _tempId,
+        sender_id: user.id,
+        sender_name: user.full_name,
+        sender_role: user.role,
+        recipient_id: null,
+        recipient_type: type,
+        target_roles: targetRoles ?? null,
+        message,
+        created_at: new Date(),
+      };
+
+      setLiveBroadcasts((prev) => [...prev, optimistic]);
+
+      const event =
+        type === "broadcast" ? "admin:message:broadcast" : "admin:message:group";
 
       socketRef.current.emit(event, {
         _tempId,
@@ -241,7 +289,7 @@ export const useAdminChat = () => {
     [user]
   );
 
-  // ── Merge history + live, deduplicated ──────────────────────
+  // ── Merge history + live, deduplicated ───────────────────────
   const conversationMessages: ChatMessage[] = (() => {
     const seenIds = new Set<string>();
     const result: ChatMessage[] = [];
@@ -255,19 +303,30 @@ export const useAdminChat = () => {
     return result;
   })();
 
-  /**
-   * Sorted recipients — most recent activity first.
-   * Recipients with no lastMessageAt fall to the bottom alphabetically.
-   */
+  // ── Merge broadcast history + live, deduplicated ─────────────
+  const broadcastMessages: ChatMessage[] = (() => {
+    const seenIds = new Set<string>();
+    const result: ChatMessage[] = [];
+    for (const msg of [...broadcastHistory, ...liveBroadcasts]) {
+      const key = msg.id ?? msg._tempId;
+      if (!key) { result.push(msg); continue; }
+      if (seenIds.has(key)) continue;
+      seenIds.add(key);
+      result.push(msg);
+    }
+    // Chronological for display (history comes DESC from DB, reverse it)
+    return result.reverse();
+  })();
+
   const sortedRecipients = [...recipients].sort((a, b) => {
     const tA = a.lastMessageAt?.getTime() ?? 0;
     const tB = b.lastMessageAt?.getTime() ?? 0;
-    if (tB !== tA) return tB - tA;                   // recent first
-    return a.full_name.localeCompare(b.full_name);    // alpha tiebreak
+    if (tB !== tA) return tB - tA;
+    return a.full_name.localeCompare(b.full_name);
   });
 
   return {
-    recipients: sortedRecipients,                     // pre-sorted, drop useMemo in UI
+    recipients: sortedRecipients,
     selectedRecipient,
     selectRecipient,
     conversationMessages,
@@ -276,5 +335,9 @@ export const useAdminChat = () => {
     currentUser: user,
     sendToUser,
     sendBroadcast,
+    // ── broadcast ──
+    broadcastMessages,
+    loadingBroadcasts,
+    fetchBroadcasts,
   };
 };

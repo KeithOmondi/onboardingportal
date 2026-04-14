@@ -35,36 +35,37 @@ export const useChat = () => {
   const socketRef = useRef<Socket | null>(null);
 
   const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [broadcastMessages, setBroadcastMessages] = useState<ChatMessage[]>([]);
   const [connected, setConnected] = useState(false);
   const [loading, setLoading] = useState(false);
-
-  // Unread count: increments on incoming messages, reset by the consumer
   const [unreadCount, setUnreadCount] = useState(0);
 
-  // The consumer tells us whether the chat window is open so we know
-  // whether to increment the badge or not
   const isChatOpenRef = useRef(false);
-
-  const markAsRead = () => setUnreadCount(0);
 
   const setChatOpen = (open: boolean) => {
     isChatOpenRef.current = open;
-    if (open) setUnreadCount(0); // clear badge the moment they open it
+    if (open) setUnreadCount(0);
   };
 
-  // ── 1. Fetch history ────────────────────────────────────────
+  // 1. Fetch History
   useEffect(() => {
     if (!user) return;
 
     const fetchHistory = async () => {
       setLoading(true);
       try {
-        const isAdmin = user.role === "admin" || user.role === "super_admin";
+        const isAdmin = user.role.toLowerCase().includes("admin");
         const endpoint = isAdmin ? "/chat/inbox" : "/chat/judge/history";
-        const { data } = await api.get(endpoint);
-        setMessages(data.messages ?? []);
+        
+        const [directRes, broadcastRes] = await Promise.all([
+          api.get(endpoint),
+          api.get("/chat/broadcast/history")
+        ]);
+
+        setMessages(directRes.data.messages ?? []);
+        setBroadcastMessages(broadcastRes.data.messages ?? []);
       } catch (err) {
-        console.error("[useChat] Failed to fetch history:", err);
+        console.error("[useChat] History fetch failed:", err);
       } finally {
         setLoading(false);
       }
@@ -73,7 +74,7 @@ export const useChat = () => {
     fetchHistory();
   }, [user]);
 
-  // ── 2. Socket setup ─────────────────────────────────────────
+  // 2. Socket Setup
   useEffect(() => {
     if (!user?.full_name) return;
 
@@ -86,47 +87,36 @@ export const useChat = () => {
     socketRef.current.on("connect", () => setConnected(true));
     socketRef.current.on("disconnect", () => setConnected(false));
 
-    // Incoming message from admin → judge sees it
+    // Listen for Direct Messages
     socketRef.current.on("user:receive", (msg: ChatMessage) => {
       setMessages((prev) => mergeMessage(prev, msg));
-      // Only bump badge if chat is closed
-      if (!isChatOpenRef.current) {
-        setUnreadCount((n) => n + 1);
-      }
+      if (!isChatOpenRef.current) setUnreadCount((n) => n + 1);
     });
 
-    // Admin inbox: admin sees incoming user messages
+    // Listen for Broadcasts (matches new Backend event)
+    socketRef.current.on("broadcast:receive", (msg: ChatMessage) => {
+      setBroadcastMessages((prev) => mergeMessage(prev, msg));
+      if (!isChatOpenRef.current) setUnreadCount((n) => n + 1);
+    });
+
+    // Admin inbound (for Admin panel use)
     socketRef.current.on("admin:receive", (msg: ChatMessage) => {
       setMessages((prev) => mergeMessage(prev, msg));
-      // Admins have their own inbox UI; badge handled separately there
     });
 
-    // Optimistic → confirmed swap for user (judge) sent messages
-    socketRef.current.on("user:message:sent", (msg: ChatMessage) => {
-      setMessages((prev) => {
-        const withoutOptimistic = prev.filter(
-          (m) => m.id || m._tempId !== msg._tempId
-        );
-        return mergeMessage(withoutOptimistic, msg);
+    // Confirmation Logic: Replaces optimistic temp message with real DB message
+    const handleSentSwap = (msg: ChatMessage) => {
+      const targetSetter = msg.recipient_type === "single" ? setMessages : setBroadcastMessages;
+      targetSetter((prev) => {
+        const filtered = prev.filter(m => m.id || m._tempId !== msg._tempId);
+        return mergeMessage(filtered, msg);
       });
-    });
+    };
 
-    // Optimistic → confirmed swap for admin sent messages
-    socketRef.current.on("admin:message:sent", (msg: ChatMessage) => {
-      setMessages((prev) => {
-        const withoutOptimistic = prev.filter(
-          (m) => m.id || m._tempId !== msg._tempId
-        );
-        return mergeMessage(withoutOptimistic, msg);
-      });
-    });
+    socketRef.current.on("user:message:sent", handleSentSwap);
+    socketRef.current.on("admin:message:sent", handleSentSwap);
 
-    // Failed send — remove optimistic bubble
     socketRef.current.on("user:message:error", ({ _tempId }: { _tempId: string }) => {
-      setMessages((prev) => prev.filter((m) => m._tempId !== _tempId));
-    });
-
-    socketRef.current.on("admin:message:error", ({ _tempId }: { _tempId: string }) => {
       setMessages((prev) => prev.filter((m) => m._tempId !== _tempId));
     });
 
@@ -135,9 +125,7 @@ export const useChat = () => {
     };
   }, [user]);
 
-  // ── 3. Actions ──────────────────────────────────────────────
-
-  // Judge → admin
+  // 3. Actions
   const sendMessage = (message: string) => {
     if (!user || !socketRef.current) return;
     const _tempId = crypto.randomUUID();
@@ -148,13 +136,12 @@ export const useChat = () => {
       sender_role: user.role,
       recipient_type: "single",
       message,
-      created_at: new Date(),
+      created_at: new Date().toISOString(),
     };
     socketRef.current.emit("user:message", optimistic);
     setMessages((prev) => [...prev, optimistic]);
   };
 
-  // Admin → single user
   const replyToUser = (message: string, recipientId: string) => {
     if (!user || !socketRef.current) return;
     const _tempId = crypto.randomUUID();
@@ -166,26 +153,20 @@ export const useChat = () => {
       recipient_id: recipientId,
       recipient_type: "single",
       message,
-      created_at: new Date(),
+      created_at: new Date().toISOString(),
     };
-    socketRef.current.emit("admin:message:single", {
-      ...msg,
-      senderId: user.id,
-      senderName: user.full_name,
-      senderRole: user.role,
-      recipientId: recipientId,
-    });
+    socketRef.current.emit("admin:message:single", { ...msg, recipientId });
     setMessages((prev) => [...prev, msg]);
   };
 
   return {
     messages,
+    broadcastMessages,
     sendMessage,
     replyToUser,
     connected,
     loading,
     unreadCount,
-    markAsRead,
     setChatOpen,
   };
 };

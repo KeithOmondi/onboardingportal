@@ -100,7 +100,7 @@ const ProgressRow = ({ label, count, total, color, textColor }: { label: string;
 const RegistrarDashboard = () => {
   const dispatch = useAppDispatch();
 
-  const { user } = useAppSelector((state) => state.auth);
+
   const { events, loading: eventsLoading } = useAppSelector((state) => state.events);
   const { notices, unreadCount: unreadNotices, loading: noticesLoading } = useAppSelector((state) => state.notices);
   const { messages, connected, loading: chatLoading } = useChat();
@@ -138,7 +138,7 @@ const RegistrarDashboard = () => {
       <div className="mb-6 flex justify-between items-start">
         <div>
           <p className="text-sm font-medium text-[#c2a336]">
-            {greeting}, {user?.full_name?.split(" ")[0] || "Registrar"}
+            {greeting}, 
           </p>
           <h1 className="text-2xl font-bold uppercase font-serif text-[#1a3a32] mt-0.5 border-b-2 border-[#c2a336] inline-block pr-8">
             Registrar DASHBOARD
