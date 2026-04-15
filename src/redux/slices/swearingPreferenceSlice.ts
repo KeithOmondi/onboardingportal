@@ -1,7 +1,4 @@
-import {
-  createSlice,
-  createAsyncThunk,
-} from "@reduxjs/toolkit";
+import { createSlice, createAsyncThunk } from "@reduxjs/toolkit";
 import { AxiosError } from "axios";
 import type {
   ISwearingPreference,
@@ -42,28 +39,26 @@ interface ApiError {
 
 /**
  * JUDGE: Fetch current judge's preference
- * Matches Backend: GET /api/v1/swearing-preferences/me
  */
 export const getMySwearingPreference = createAsyncThunk(
   "swearingPreference/getMy",
   async (_, { rejectWithValue }) => {
     try {
       const response = await api.get<{ data: ISwearingPreference }>(
-        "/swearing-preferences/me"
+        "/swearing-preferences/me",
       );
       return response.data.data;
     } catch (error) {
       const err = error as AxiosError<ApiError>;
       return rejectWithValue(
-        err.response?.data?.message || "Failed to load preferences"
+        err.response?.data?.message || "Failed to load preferences",
       );
     }
-  }
+  },
 );
 
 /**
  * JUDGE: Save or Update preference
- * Matches Backend: POST /api/v1/swearing-preferences/save
  */
 export const saveSwearingPreference = createAsyncThunk(
   "swearingPreference/save",
@@ -71,17 +66,21 @@ export const saveSwearingPreference = createAsyncThunk(
     try {
       const response = await api.post<{ data: ISwearingPreference }>(
         "/swearing-preferences/save",
-        payload
+        payload,
       );
       return response.data.data;
     } catch (error) {
       const err = error as AxiosError<ApiError>;
       return rejectWithValue(
-        err.response?.data?.message || "Failed to save selection"
+        err.response?.data?.message || "Failed to save selection",
       );
     }
-  }
+  },
 );
+
+/* =====================================================
+    EXPORT / DOWNLOAD THUNKS
+===================================================== */
 
 export const downloadSwearingPreferencesPDF = createAsyncThunk(
   "swearingPreference/downloadPDF",
@@ -90,60 +89,89 @@ export const downloadSwearingPreferencesPDF = createAsyncThunk(
       const response = await api.get("/swearing-preferences/download-report", {
         responseType: "blob",
       });
-
-      const fileName = `Swearing_Preferences_${new Date().toISOString().split('T')[0]}.pdf`;
-      
-      // Use the namespace prefix here
+      const fileName = `Swearing_Preferences_${new Date().toISOString().split("T")[0]}.pdf`;
       FileSaver.saveAs(response.data, fileName);
-
-      return "Download started successfully";
-    } catch  {
+      return "PDF download started";
+    } catch {
       return rejectWithValue("Failed to download PDF report");
     }
-  }
+  },
 );
+
+export const downloadSwearingPreferencesExcel = createAsyncThunk(
+  "swearingPreference/downloadExcel",
+  async (_, { rejectWithValue }) => {
+    try {
+      const response = await api.get("/swearing-preferences/export-excel", {
+        responseType: "blob",
+      });
+      const fileName = `Swearing_Preferences_${new Date().toISOString().split("T")[0]}.xlsx`;
+      FileSaver.saveAs(response.data, fileName);
+      return "Excel download started";
+    } catch {
+      return rejectWithValue("Failed to download Excel report");
+    }
+  },
+);
+
+export const downloadSwearingPreferencesWord = createAsyncThunk(
+  "swearingPreference/downloadWord",
+  async (_, { rejectWithValue }) => {
+    try {
+      const response = await api.get("/swearing-preferences/export-word", {
+        responseType: "blob",
+      });
+      const fileName = `Swearing_Preferences_${new Date().toISOString().split("T")[0]}.docx`;
+      FileSaver.saveAs(response.data, fileName);
+      return "Word download started";
+    } catch {
+      return rejectWithValue("Failed to download Word document");
+    }
+  },
+);
+
+/* =====================================================
+    ADMIN THUNKS
+===================================================== */
 
 /**
  * ADMIN: Fetch all records
- * Matches Backend: GET /api/v1/swearing-preferences/get
  */
 export const fetchAllPreferences = createAsyncThunk(
   "swearingPreference/fetchAll",
   async (_, { rejectWithValue }) => {
     try {
       const response = await api.get<{ data: ISwearingPreference[] }>(
-        "/swearing-preferences/get"
+        "/swearing-preferences/get",
       );
-      console.log("🔍 Raw API response:", response.data); // Add this
       return response.data.data;
     } catch (error) {
       const err = error as AxiosError<ApiError>;
-      console.error("❌ Fetch failed:", err.response?.status, err.response?.data); // And this
       return rejectWithValue(
-        err.response?.data?.message || "Administrative fetch failed"
+        err.response?.data?.message || "Administrative fetch failed",
       );
     }
-  }
+  },
 );
+
 /**
  * ADMIN: Fetch specific record by User ID
- * Matches Backend: GET /api/v1/swearing-preferences/get/:userId
  */
 export const getPreferenceByUserId = createAsyncThunk(
   "swearingPreference/getById",
   async (userId: string, { rejectWithValue }) => {
     try {
       const response = await api.get<{ data: ISwearingPreference }>(
-        `/swearing-preferences/get/${userId}`
+        `/swearing-preferences/get/${userId}`,
       );
       return response.data.data;
     } catch (error) {
       const err = error as AxiosError<ApiError>;
       return rejectWithValue(
-        err.response?.data?.message || "Failed to fetch judge preference"
+        err.response?.data?.message || "Failed to fetch judge preference",
       );
     }
-  }
+  },
 );
 
 /* =====================================================
@@ -221,7 +249,26 @@ const swearingPreferenceSlice = createSlice({
       .addCase(getPreferenceByUserId.rejected, (state, action) => {
         state.loading = false;
         state.error = action.payload as string;
-      });
+      })
+
+      /* Handle Global Loading for Exports */
+      .addMatcher(
+        (action) =>
+          action.type.endsWith("/downloadPDF/pending") ||
+          action.type.endsWith("/downloadExcel/pending") ||
+          action.type.endsWith("/downloadWord/pending"),
+        (state) => {
+          state.loading = true;
+        },
+      )
+      .addMatcher(
+        (action) =>
+          action.type.endsWith("/fulfilled") ||
+          action.type.endsWith("/rejected"),
+        (state) => {
+          state.loading = false;
+        },
+      );
   },
 });
 

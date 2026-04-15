@@ -56,8 +56,6 @@ const getErrorMessage = (err: unknown): string => {
     THUNKS
 ===================================================== */
 
-// ... (saveGuestDraft, submitGuestRegistry, addMoreGuests, getMyGuestRegistry, deleteMyRegistry remain unchanged)
-
 export const saveGuestDraft = createAsyncThunk(
   "guests/save",
   async (guests: IGuest[], { rejectWithValue }) => {
@@ -130,14 +128,16 @@ export const adminGetAllRegistries = createAsyncThunk(
   }
 );
 
-// Individual Download
+/**
+ * DOWNLOAD THUNKS
+ */
+
+// Individual PDF
 export const downloadGuestListPDF = createAsyncThunk(
   "guests/downloadGuestPDF",
   async (userId: string, { rejectWithValue }) => {
     try {
-      const response = await api.get(`/guests/report/${userId}`, {
-        responseType: "blob",
-      });
+      const response = await api.get(`/guests/report/${userId}`, { responseType: "blob" });
       FileSaver.saveAs(response.data, `Guest_List_${userId}.pdf`);
       return "Guest list downloaded successfully";
     } catch {
@@ -146,19 +146,47 @@ export const downloadGuestListPDF = createAsyncThunk(
   }
 );
 
-// NEW: Bulk Admin Export Download
+// Bulk PDF Export
 export const exportFullRegistryPDF = createAsyncThunk(
   "guests/exportFullRegistry",
   async (_, { rejectWithValue }) => {
     try {
-      const response = await api.get("/guests/admin/export-all", {
-        responseType: "blob",
-      });
-      const fileName = `Full_Judiciary_Registry_${new Date().toISOString().split("T")[0]}.pdf`;
+      const response = await api.get("/guests/admin/export-all", { responseType: "blob" });
+      const fileName = `Full_Registry_${new Date().toISOString().split("T")[0]}.pdf`;
       FileSaver.saveAs(response.data, fileName);
-      return "Full registry exported successfully";
+      return "Full registry PDF exported successfully";
     } catch {
-      return rejectWithValue("Failed to export full registry");
+      return rejectWithValue("Failed to export full registry PDF");
+    }
+  }
+);
+
+// NEW: Bulk Excel Export
+export const exportFullRegistryExcel = createAsyncThunk(
+  "guests/exportFullExcel",
+  async (_, { rejectWithValue }) => {
+    try {
+      const response = await api.get("/guests/admin/export-excel", { responseType: "blob" });
+      const fileName = `Full_Registry_${new Date().toISOString().split("T")[0]}.xlsx`;
+      FileSaver.saveAs(response.data, fileName);
+      return "Full registry Excel exported successfully";
+    } catch {
+      return rejectWithValue("Failed to export full registry Excel");
+    }
+  }
+);
+
+// NEW: Bulk Word Export
+export const exportFullRegistryWord = createAsyncThunk(
+  "guests/exportFullWord",
+  async (_, { rejectWithValue }) => {
+    try {
+      const response = await api.get("/guests/admin/export-word", { responseType: "blob" });
+      const fileName = `Full_Registry_${new Date().toISOString().split("T")[0]}.docx`;
+      FileSaver.saveAs(response.data, fileName);
+      return "Full registry Word exported successfully";
+    } catch {
+      return rejectWithValue("Failed to export full registry Word");
     }
   }
 );
@@ -184,9 +212,15 @@ const guestSlice = createSlice({
       state.myRegistry.updatedAt = action.payload.updated_at;
     });
 
-    // Combined PDF Case Handling (Includes the new Export thunk)
-    const pdfThunks = [downloadGuestListPDF, exportFullRegistryPDF];
-    pdfThunks.forEach(thunk => {
+    // Handle all Download/Export Thunks (Individual PDF, Bulk PDF, Excel, Word)
+    const exportThunks = [
+      downloadGuestListPDF, 
+      exportFullRegistryPDF, 
+      exportFullRegistryExcel, 
+      exportFullRegistryWord
+    ];
+
+    exportThunks.forEach(thunk => {
       builder.addCase(thunk.pending, (state) => { state.loading = true; });
       builder.addCase(thunk.fulfilled, (state, action) => {
         state.loading = false;

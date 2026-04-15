@@ -1,15 +1,21 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
 import { useDispatch, useSelector } from "react-redux";
 import {
   Users, Scale, BookOpen, Search,
-  Download, Filter, RefreshCw, ChevronRight,
-  Loader2, Gavel, Calendar
+  Download, RefreshCw, ChevronRight,
+  Loader2, Gavel, Calendar, FileText, Table, CheckCircle2
 } from "lucide-react";
 import type { AppDispatch, RootState } from "../../redux/store";
 import { 
   fetchAllPreferences,
-  downloadSwearingPreferencesPDF // <── Use the correct thunk
+  downloadSwearingPreferencesPDF,
+  downloadSwearingPreferencesExcel,
+  downloadSwearingPreferencesWord
 } from "../../redux/slices/swearingPreferenceSlice";
+
+// ── Types ──────────────────────────────────────────────────────────────────
+type ExportFormat = 'pdf' | 'excel' | 'word';
+type FilterStatus = 'all' | 'oath' | 'affirmation';
 
 const SuperAdminOath = () => {
   const dispatch = useDispatch<AppDispatch>();
@@ -18,33 +24,46 @@ const SuperAdminOath = () => {
   );
 
   const [searchTerm, setSearchTerm] = useState("");
-  const [isDownloading, setIsDownloading] = useState(false); 
+  const [activeFilter, setActiveFilter] = useState<FilterStatus>('all');
+  const [exportType, setExportType] = useState<ExportFormat | null>(null); 
+  const [showExportMenu, setShowExportMenu] = useState(false);
 
   useEffect(() => {
     dispatch(fetchAllPreferences());
   }, [dispatch]);
 
-  // FIXED: Now calls the PDF thunk instead of the "Save" thunk
-  const handleDownload = async () => {
-    setIsDownloading(true);
+  const handleExport = async (format: ExportFormat) => {
+    setExportType(format);
+    setShowExportMenu(false);
     try {
-      await dispatch(downloadSwearingPreferencesPDF()).unwrap();
+      if (format === 'pdf') await dispatch(downloadSwearingPreferencesPDF()).unwrap();
+      if (format === 'excel') await dispatch(downloadSwearingPreferencesExcel()).unwrap();
+      if (format === 'word') await dispatch(downloadSwearingPreferencesWord()).unwrap();
     } catch (error) {
-      console.error("Export failed:", error);
-      alert("Failed to generate PDF report.");
+      console.error(`${format.toUpperCase()} Export failed:`, error);
     } finally {
-      setIsDownloading(false);
+      setExportType(null);
     }
   };
 
-  const totalJudges = allPreferences.length;
-  const oathCount = allPreferences.filter(p => p.ceremony_choice === "oath").length;
-  const affirmationCount = allPreferences.filter(p => p.ceremony_choice === "affirmation").length;
+  // ── Logic ────────────────────────────────────────────────────────────────
+  const stats = useMemo(() => ({
+    total: allPreferences.length,
+    oaths: allPreferences.filter(p => p.ceremony_choice === "oath").length,
+    affirmations: allPreferences.filter(p => p.ceremony_choice === "affirmation").length,
+  }), [allPreferences]);
 
-  const filteredData = allPreferences.filter((pref) =>
-    pref.full_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    pref.religious_text?.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  const filteredData = useMemo(() => {
+    return allPreferences.filter((pref) => {
+      const matchesSearch = 
+        pref.full_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        pref.religious_text?.toLowerCase().includes(searchTerm.toLowerCase());
+      
+      const matchesFilter = activeFilter === 'all' || pref.ceremony_choice === activeFilter;
+      
+      return matchesSearch && matchesFilter;
+    });
+  }, [allPreferences, searchTerm, activeFilter]);
 
   return (
     <div
@@ -91,61 +110,96 @@ const SuperAdminOath = () => {
               <RefreshCw size={20} className={`${loading ? "animate-spin" : ""} text-[#C9922A]`} />
             </button>
             
-            <button
-              onClick={handleDownload}
-              disabled={isDownloading}
-              className="flex items-center gap-3 px-8 py-4 rounded-xl font-bold uppercase tracking-widest text-[11px] transition-all hover:brightness-110 active:scale-95 disabled:opacity-70"
-              style={{
-                background: "linear-gradient(135deg, #C9922A 0%, #a87520 100%)",
-                color: "white",
-                boxShadow: "0 10px 25px -5px rgba(201,146,42,0.4)",
-              }}
-            >
-              {isDownloading ? <Loader2 size={16} className="animate-spin" /> : <Download size={16} />}
-              {isDownloading ? "Generating PDF..." : "Export Records"}
-            </button>
+            <div className="relative">
+              <button
+                onClick={() => setShowExportMenu(!showExportMenu)}
+                disabled={!!exportType}
+                className="flex items-center gap-3 px-8 py-4 rounded-xl font-bold uppercase tracking-widest text-[11px] transition-all hover:brightness-110 active:scale-95 disabled:opacity-70"
+                style={{
+                  background: "linear-gradient(135deg, #C9922A 0%, #a87520 100%)",
+                  color: "white",
+                  boxShadow: "0 10px 25px -5px rgba(201,146,42,0.4)",
+                }}
+              >
+                {exportType ? <Loader2 size={16} className="animate-spin" /> : <Download size={16} />}
+                {exportType ? "Exporting..." : "Export Records"}
+              </button>
+
+              {showExportMenu && (
+                <div className="absolute right-0 mt-2 w-48 bg-white rounded-2xl shadow-2xl border border-black/5 overflow-hidden z-50">
+                  {(['pdf', 'excel', 'word'] as ExportFormat[]).map((fmt) => (
+                    <button 
+                      key={fmt}
+                      onClick={() => handleExport(fmt)}
+                      className="w-full flex items-center gap-3 px-5 py-4 text-[10px] font-black uppercase tracking-widest text-gray-600 hover:bg-[#fcf9f2] hover:text-[#C9922A] transition-colors border-b last:border-0 border-black/5"
+                    >
+                      {fmt === 'excel' ? <Table size={16} /> : <FileText size={16} />} 
+                      {fmt.toUpperCase()} Document
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
         </header>
 
         {/* ── STAT CARDS ── */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
           {[
-            { label: "Total Registrations", value: totalJudges, icon: Users, color: "#C9922A" },
-            { label: "Religious Oaths", value: oathCount, icon: BookOpen, color: "#C9922A" },
-            { label: "Affirmations", value: affirmationCount, icon: Scale, color: "#2d6a4f" },
-          ].map((stat, i) => (
-            <div key={i} className="bg-white border border-black/5 rounded-3xl p-8 shadow-sm">
+            { label: "Total Registrations", value: stats.total, icon: Users, color: "#C9922A", id: 'all' },
+            { label: "Religious Oaths", value: stats.oaths, icon: BookOpen, color: "#C9922A", id: 'oath' },
+            { label: "Affirmations", value: stats.affirmations, icon: Scale, color: "#2d6a4f", id: 'affirmation' },
+          ].map((stat) => (
+            <button 
+              key={stat.id}
+              onClick={() => setActiveFilter(stat.id as FilterStatus)}
+              className={`bg-white border text-left rounded-3xl p-8 shadow-sm transition-all hover:shadow-md active:scale-[0.98] ${
+                activeFilter === stat.id ? "ring-2 ring-[#C9922A] border-transparent" : "border-black/5"
+              }`}
+            >
               <div className="flex justify-between items-start">
                 <div>
                   <p className="text-gray-400 text-[10px] font-bold uppercase tracking-[0.2em] mb-1">{stat.label}</p>
                   <p className="text-4xl font-serif text-[#1a1c1e]">{stat.value.toString().padStart(2, "0")}</p>
                 </div>
-                <div className="p-3 bg-[#fcf9f2] rounded-xl border border-[#C9922A]/10">
-                  <stat.icon size={24} style={{ color: stat.color }} strokeWidth={1.5} />
+                <div className={`p-3 rounded-xl border ${activeFilter === stat.id ? "bg-[#C9922A] text-white" : "bg-[#fcf9f2] text-[#C9922A] border-[#C9922A]/10"}`}>
+                  <stat.icon size={24} strokeWidth={1.5} />
                 </div>
               </div>
-            </div>
+            </button>
           ))}
         </div>
 
         {/* ── MAIN REGISTRY CARD ── */}
         <div className="bg-white border border-black/5 rounded-[2rem] overflow-hidden shadow-xl">
           <div className="p-8 border-b border-black/5 flex flex-col md:flex-row gap-6 justify-between items-center bg-[#fcfcfc]">
+            {/* SEARCH */}
             <div className="relative w-full md:w-1/2 group">
               <Search className="absolute left-5 top-1/2 -translate-y-1/2 text-gray-300 group-focus-within:text-[#C9922A]" size={18} />
               <input
                 type="text"
-                placeholder="Filter by officer name or text..."
+                placeholder="Search by name or sacred text..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
                 className="w-full bg-[#f8f8f8] border border-black/5 rounded-2xl py-4 pl-14 pr-6 text-sm outline-none focus:border-[#C9922A]/50 focus:bg-white transition-all font-sans"
               />
             </div>
-            <div className="flex items-center gap-2 px-5 py-2 rounded-full bg-[#fcf9f2] border border-[#C9922A]/10">
-              <Filter size={14} className="text-[#C9922A]" />
-              <span className="text-[10px] font-bold tracking-widest uppercase text-[#C9922A]">
-                {filteredData.length} Results Found
-              </span>
+
+            {/* QUICK FILTERS */}
+            <div className="flex bg-[#f8f8f8] p-1.5 rounded-2xl border border-black/5">
+              {(['all', 'oath', 'affirmation'] as FilterStatus[]).map((f) => (
+                <button
+                  key={f}
+                  onClick={() => setActiveFilter(f)}
+                  className={`px-6 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${
+                    activeFilter === f 
+                      ? "bg-white text-[#C9922A] shadow-sm" 
+                      : "text-gray-400 hover:text-gray-600"
+                  }`}
+                >
+                  {f}
+                </button>
+              ))}
             </div>
           </div>
 
@@ -161,7 +215,7 @@ const SuperAdminOath = () => {
                 </tr>
               </thead>
               <tbody className="divide-y divide-black/5 font-sans">
-                {filteredData.map((pref) => (
+                {filteredData.length > 0 ? filteredData.map((pref) => (
                   <tr key={pref.id} className="hover:bg-[#fcf9f2]/30 transition-colors group">
                     <td className="px-10 py-6">
                       <div className="flex items-center gap-5">
@@ -172,16 +226,14 @@ const SuperAdminOath = () => {
                           <p className="font-bold text-[#1a1c1e] group-hover:text-[#C9922A] transition-colors">
                             {pref.full_name || "Unknown Judge"}
                           </p>
-                          {pref.updated_at && (
-                            <p className="text-[10px] uppercase tracking-wider text-gray-400 flex items-center gap-1 mt-1 font-bold">
-                              <Calendar size={10} />
-                              {new Date(pref.updated_at).toLocaleDateString()}
-                            </p>
-                          )}
+                          <p className="text-[10px] uppercase tracking-wider text-gray-400 flex items-center gap-1 mt-1 font-bold">
+                            <Calendar size={10} />
+                            {pref.updated_at ? new Date(pref.updated_at).toLocaleDateString() : 'N/A'}
+                          </p>
                         </div>
                       </div>
                     </td>
-                    <td className="px-10 py-6 capitalize">
+                    <td className="px-10 py-6">
                       <div className={`inline-flex items-center gap-2 px-4 py-1.5 rounded-lg border text-[10px] font-black uppercase tracking-tighter ${
                         pref.ceremony_choice === "oath" ? "bg-[#C9922A]/10 border-[#C9922A]/30 text-[#C9922A]" : "bg-green-50 border-green-200 text-green-700"
                       }`}>
@@ -194,12 +246,18 @@ const SuperAdminOath = () => {
                       </span>
                     </td>
                     <td className="px-10 py-6">
-                      <button className="p-3 rounded-lg bg-gray-50 border border-black/5 text-gray-300 hover:text-[#C9922A] transition-all">
+                      <button className="p-3 rounded-lg bg-gray-50 border border-black/5 text-gray-300 hover:text-[#C9922A] hover:bg-white transition-all">
                         <ChevronRight size={18} />
                       </button>
                     </td>
                   </tr>
-                ))}
+                )) : (
+                  <tr>
+                    <td colSpan={4} className="px-10 py-20 text-center">
+                      <p className="text-gray-400 font-serif italic">No matching records found in the registry.</p>
+                    </td>
+                  </tr>
+                )}
               </tbody>
             </table>
           </div>
@@ -208,9 +266,10 @@ const SuperAdminOath = () => {
             <p className="text-[10px] font-bold uppercase tracking-[0.3em] text-gray-400">
               onboarding portal • {new Date().getFullYear()}
             </p>
-            <p className="text-[10px] text-gray-400 font-sans italic font-bold">
-              Displaying {filteredData.length} of {totalJudges} officers
-            </p>
+            <div className="flex items-center gap-2 text-[10px] text-gray-400 font-sans italic font-bold uppercase tracking-widest">
+              <CheckCircle2 size={12} className="text-[#C9922A]" />
+              Showing {filteredData.length} Results
+            </div>
           </footer>
         </div>
       </div>
