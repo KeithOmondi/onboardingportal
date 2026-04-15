@@ -3,12 +3,16 @@ import { useDispatch, useSelector } from "react-redux";
 import {
   Search, Loader2, ChevronUp, ChevronDown, ChevronsUpDown,
   Users, CheckCircle2, Clock3, ShieldCheck, Hash, Phone,
-  Mail, FileDown,
+  Mail, FileStack, Download
 } from "lucide-react";
-import { adminGetAllRegistries, adminGetRegistryById } from "../../redux/slices/guestSlice";
+import { 
+  adminGetAllRegistries, 
+  adminGetRegistryById, 
+  exportFullRegistryPDF,
+  downloadGuestListPDF 
+} from "../../redux/slices/guestSlice";
 import type { AppDispatch, RootState } from "../../redux/store";
 import type { IAdminRegistryRow, IGuest, RegistrationStatus } from "../../interfaces/guests.interface";
-import api from "../../api/api";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 type SortKey = keyof Pick<IAdminRegistryRow, "judge_name" | "status" | "guest_count" | "updated_at">;
@@ -30,21 +34,6 @@ const formatDate = (iso: string) =>
 const statusMeta: Record<RegistrationStatus, { label: string }> = {
   SUBMITTED: { label: "Finalized" },
   DRAFT:     { label: "Draft Mode" },
-};
-
-// ── Download Helper ──────────────────────────────────────────────────────────
-const downloadJudgePDF = async (userId: string, judgeName: string) => {
-  const response = await api.get(`/guests/report/${userId}`, {
-    responseType: "blob",
-  });
-  const url = window.URL.createObjectURL(new Blob([response.data]));
-  const link = document.createElement("a");
-  link.href = url;
-  link.setAttribute("download", `GuestList_${judgeName.replace(/\s+/g, "_")}.pdf`);
-  document.body.appendChild(link);
-  link.click();
-  link.remove();
-  window.URL.revokeObjectURL(url);
 };
 
 // ── Sort Icon ────────────────────────────────────────────────────────────────
@@ -122,16 +111,18 @@ const GuestCard = ({ guest, idx }: { guest: IGuest; idx: number }) => (
 const SuperAdminGuests = () => {
   const dispatch = useDispatch<AppDispatch>();
 
-  const { allLists, loading, expandedRegistry, expandLoading } = useSelector(
+  const { allLists, loading: listLoading, expandedRegistry, expandLoading } = useSelector(
     (state: RootState) => state.guests.admin
   );
+  
+  // Get global loading for PDF generation from the base state
+  const isPdfLoading = useSelector((state: RootState) => state.guests.loading);
 
-  const [search,      setSearch]      = useState("");
-  const [filter,      setFilter]      = useState<RegistrationStatus | "ALL">("ALL");
-  const [sortKey,     setSortKey]     = useState<SortKey>("updated_at");
-  const [sortDir,     setSortDir]     = useState<SortDir>("desc");
-  const [expandedId,  setExpandedId]  = useState<number | null>(null);
-  const [downloading, setDownloading] = useState<string | null>(null); // ← added
+  const [search, setSearch] = useState("");
+  const [filter, setFilter] = useState<RegistrationStatus | "ALL">("ALL");
+  const [sortKey, setSortKey] = useState<SortKey>("updated_at");
+  const [sortDir, setSortDir] = useState<SortDir>("desc");
+  const [expandedId, setExpandedId] = useState<number | null>(null);
 
   useEffect(() => {
     dispatch(adminGetAllRegistries());
@@ -155,7 +146,7 @@ const SuperAdminGuests = () => {
       return sortDir === "asc" ? cmp : -cmp;
     });
 
-  const totalGuests    = allLists.reduce((s, r) => s + Number(r.guest_count), 0);
+  const totalGuests     = allLists.reduce((s, r) => s + Number(r.guest_count), 0);
   const submittedCount = allLists.filter((r) => r.status === "SUBMITTED").length;
   const draftCount     = allLists.filter((r) => r.status === "DRAFT").length;
 
@@ -177,19 +168,16 @@ const SuperAdminGuests = () => {
     }
   };
 
-  // ── Download Handler ───────────────────────────────────────────────────────
-  const handleDownload = async (userId: string, judgeName: string) => {
-    try {
-      setDownloading(userId);
-      await downloadJudgePDF(userId, judgeName);
-    } catch (error) {
-      console.error("Failed to download PDF", error);
-    } finally {
-      setDownloading(null);
-    }
+  // ── Handlers ───────────────────────────────────────────────────────────────
+  const handleDownloadFullRegistry = () => {
+    dispatch(exportFullRegistryPDF());
   };
 
-  if (loading && allLists.length === 0) {
+  const handleDownloadIndividualPDF = (userId: string) => {
+    dispatch(downloadGuestListPDF(userId));
+  };
+
+  if (listLoading && allLists.length === 0) {
     return (
       <div className="flex h-96 flex-col items-center justify-center space-y-4">
         <Loader2 className="animate-spin text-[#355E3B]" size={40} />
@@ -204,21 +192,40 @@ const SuperAdminGuests = () => {
     <div className="max-w-7xl mx-auto p-8 space-y-8 animate-in fade-in duration-700">
 
       {/* Header & Stats */}
-      <div className="flex flex-col gap-6 border-b border-slate-200 pb-8">
-        <div>
-          <h1 className="text-[#355E3B] font-serif text-3xl font-bold mb-2 tracking-tight">
-            Guest Registration
-          </h1>
-          <p className="text-slate-500 text-xs font-black uppercase tracking-widest">
-            High Court Registry Management
-          </p>
+      <div className="flex flex-col md:flex-row md:items-end justify-between gap-6 border-b border-slate-200 pb-8">
+        <div className="space-y-6">
+          <div>
+            <h1 className="text-[#355E3B] font-serif text-3xl font-bold mb-2 tracking-tight">
+              Guest Registration
+            </h1>
+            <p className="text-slate-500 text-xs font-black uppercase tracking-widest">
+              High Court Guests List Management
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-4">
+            <StatCard icon={<ShieldCheck size={18} />}  label="Total Entries" value={allLists.length} />
+            <StatCard icon={<CheckCircle2 size={18} />} label="Finalized"     value={submittedCount} color="text-green-600" />
+            <StatCard icon={<Clock3 size={18} />}        label="Drafts"        value={draftCount}     color="text-amber-600" />
+            <StatCard icon={<Users size={18} />}          label="Guest Total"  value={totalGuests} />
+          </div>
         </div>
-        <div className="flex flex-wrap gap-4">
-          <StatCard icon={<ShieldCheck size={18} />}  label="Total Entries" value={allLists.length} />
-          <StatCard icon={<CheckCircle2 size={18} />} label="Finalized"     value={submittedCount} color="text-green-600" />
-          <StatCard icon={<Clock3 size={18} />}        label="Drafts"        value={draftCount}     color="text-amber-600" />
-          <StatCard icon={<Users size={18} />}          label="Guest Total"  value={totalGuests} />
-        </div>
+
+        {/* Global Action Button: Bulk Export */}
+        <button
+          onClick={handleDownloadFullRegistry}
+          disabled={isPdfLoading || allLists.length === 0}
+          className="flex items-center justify-center gap-3 px-6 py-4 rounded-2xl bg-[#1a3a32] text-white shadow-xl shadow-[#1a3a32]/20 hover:bg-[#1a3a32]/90 transition-all disabled:opacity-50 disabled:cursor-not-allowed group"
+        >
+          {isPdfLoading ? (
+            <Loader2 size={20} className="animate-spin" />
+          ) : (
+            <FileStack size={20} className="group-hover:scale-110 transition-transform" />
+          )}
+          <div className="text-left">
+            <p className="text-[10px] font-black uppercase tracking-widest leading-none mb-1">Export Registry</p>
+            <p className="text-xs font-bold opacity-80 leading-none">Download Consolidated PDF</p>
+          </div>
+        </button>
       </div>
 
       {/* Toolbar */}
@@ -287,10 +294,8 @@ const SuperAdminGuests = () => {
               ) : (
                 rows.map((row) => {
                   const isExpanded = expandedId === row.id;
-                  const isDownloading = downloading === row.user_id; // ← added
                   return (
                     <React.Fragment key={row.id}>
-                      {/* Summary Row */}
                       <tr className={`hover:bg-slate-50/80 transition-all ${isExpanded ? "bg-slate-50/50" : ""}`}>
                         <td className="px-8 py-6">
                           <span className="text-sm font-bold text-[#355E3B]">{row.judge_name}</span>
@@ -301,7 +306,7 @@ const SuperAdminGuests = () => {
                         <td className="px-8 py-6">
                           <div className="flex items-baseline gap-1">
                             <span className="text-base font-bold text-slate-700">{Number(row.guest_count)}</span>
-                            <span className="text-[10px] text-slate-400 font-black uppercase tracking-tighter">Guests List</span>
+                            <span className="text-[10px] text-slate-400 font-black uppercase tracking-tighter">Guests</span>
                           </div>
                         </td>
                         <td className="px-8 py-6">
@@ -318,23 +323,18 @@ const SuperAdminGuests = () => {
                         <td className="px-8 py-6 text-xs text-slate-500 font-semibold">
                           {formatDate(row.updated_at)}
                         </td>
-                        <td className="px-8 py-6">
-                          <div className="flex items-center justify-end gap-2"> {/* ← changed to div with gap */}
-                            {/* Download Button ← added */}
+                        <td className="px-8 py-6 text-right">
+                          <div className="flex items-center justify-end gap-2">
+                             {/* Individual Download Button */}
                             <button
-                              onClick={() => handleDownload(row.user_id, row.judge_name)}
-                              disabled={isDownloading}
-                              title="Download PDF Report"
-                              className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all bg-white border border-slate-200 text-slate-500 hover:text-[#355E3B] hover:border-[#355E3B]/30 hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                              onClick={() => handleDownloadIndividualPDF(row.user_id)}
+                              disabled={isPdfLoading}
+                              className="p-2.5 rounded-xl border border-slate-200 text-slate-400 hover:text-[#355E3B] hover:bg-slate-50 transition-all"
+                              title="Download PDF"
                             >
-                              {isDownloading
-                                ? <Loader2 size={13} className="animate-spin" />
-                                : <FileDown size={13} />
-                              }
-                              {isDownloading ? "Downloading..." : "PDF"}
+                              <Download size={16} />
                             </button>
-
-                            {/* View / Close Button */}
+                            
                             <button
                               onClick={() => handleToggleRow(row.id)}
                               className={`inline-flex items-center gap-2 px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${
@@ -343,14 +343,13 @@ const SuperAdminGuests = () => {
                                   : "bg-white border border-slate-200 text-[#355E3B] hover:bg-slate-50"
                               }`}
                             >
-                              {isExpanded ? "Close" : "View"}
+                              {isExpanded ? "Close" : "View Details"}
                               {isExpanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
                             </button>
                           </div>
                         </td>
                       </tr>
 
-                      {/* Expanded Guest Detail Row */}
                       {isExpanded && (
                         <tr className="bg-white">
                           <td colSpan={6} className="px-8 py-8 animate-in slide-in-from-top-2 duration-300">
@@ -363,23 +362,9 @@ const SuperAdminGuests = () => {
                               </div>
                             ) : expandedRegistry && expandedRegistry.id === row.id ? (
                               <div className="flex flex-col gap-8">
-                                <div className="flex justify-between items-center border-b border-slate-100 pb-4">
-                                  <h3 className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">
-                                    Authorized Guest Details
-                                  </h3>
-                                  {/* Download PDF inside expanded panel ← updated from placeholder */}
-                                  <button
-                                    onClick={() => handleDownload(row.user_id, row.judge_name)}
-                                    disabled={isDownloading}
-                                    className="flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-[#355E3B] hover:underline disabled:opacity-50 disabled:cursor-not-allowed"
-                                  >
-                                    {isDownloading
-                                      ? <Loader2 size={12} className="animate-spin" />
-                                      : <FileDown size={12} />
-                                    }
-                                    {isDownloading ? "Downloading..." : "Download PDF Report"}
-                                  </button>
-                                </div>
+                                <h3 className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 border-b border-slate-100 pb-4">
+                                  Authorized Guest Details
+                                </h3>
                                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                                   {expandedRegistry.guests.map((guest: IGuest, idx: number) => (
                                     <GuestCard key={guest.id ?? idx} guest={guest} idx={idx} />
@@ -403,10 +388,9 @@ const SuperAdminGuests = () => {
         </div>
       </div>
 
-      {/* Footer count */}
-      {!loading && rows.length > 0 && (
+      {!listLoading && rows.length > 0 && (
         <p className="text-xs text-slate-400 text-right">
-          showing {rows.length} of {allLists.length}
+          showing {rows.length} of {allLists.length} records
         </p>
       )}
     </div>

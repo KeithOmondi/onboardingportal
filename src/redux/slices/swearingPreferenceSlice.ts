@@ -8,6 +8,7 @@ import type {
   SwearingPreferencePayload,
 } from "../../interfaces/swearingPreference.interface";
 import api from "../../api/api";
+import FileSaver from "file-saver";
 
 /* =====================================================
     STATE & TYPES
@@ -78,6 +79,26 @@ export const saveSwearingPreference = createAsyncThunk(
       return rejectWithValue(
         err.response?.data?.message || "Failed to save selection"
       );
+    }
+  }
+);
+
+export const downloadSwearingPreferencesPDF = createAsyncThunk(
+  "swearingPreference/downloadPDF",
+  async (_, { rejectWithValue }) => {
+    try {
+      const response = await api.get("/swearing-preferences/download-report", {
+        responseType: "blob",
+      });
+
+      const fileName = `Swearing_Preferences_${new Date().toISOString().split('T')[0]}.pdf`;
+      
+      // Use the namespace prefix here
+      FileSaver.saveAs(response.data, fileName);
+
+      return "Download started successfully";
+    } catch  {
+      return rejectWithValue("Failed to download PDF report");
     }
   }
 );

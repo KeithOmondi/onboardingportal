@@ -1,7 +1,13 @@
 import { createSlice, createAsyncThunk } from "@reduxjs/toolkit";
-import type { IAdminRegistryRow, IGuest, IRegistrationResponse, RegistrationStatus } from "../../interfaces/guests.interface";
+import type {
+  IAdminRegistryRow,
+  IGuest,
+  IRegistrationResponse,
+  RegistrationStatus,
+} from "../../interfaces/guests.interface";
 import api from "../../api/api";
 import axios from "axios";
+import * as FileSaver from "file-saver";
 
 interface GuestState {
   myRegistry: {
@@ -12,8 +18,8 @@ interface GuestState {
   admin: {
     allLists: IAdminRegistryRow[];
     loading: boolean;
-    expandedRegistry: IRegistrationResponse | null; // ← added
-    expandLoading: boolean;                          // ← added
+    expandedRegistry: IRegistrationResponse | null;
+    expandLoading: boolean;
   };
   loading: boolean;
   isSaving: boolean;
@@ -30,8 +36,8 @@ const initialState: GuestState = {
   admin: {
     allLists: [],
     loading: false,
-    expandedRegistry: null, // ← added
-    expandLoading: false,   // ← added
+    expandedRegistry: null,
+    expandLoading: false,
   },
   loading: false,
   isSaving: false,
@@ -45,6 +51,12 @@ const getErrorMessage = (err: unknown): string => {
   }
   return String(err);
 };
+
+/* =====================================================
+    THUNKS
+===================================================== */
+
+// ... (saveGuestDraft, submitGuestRegistry, addMoreGuests, getMyGuestRegistry, deleteMyRegistry remain unchanged)
 
 export const saveGuestDraft = createAsyncThunk(
   "guests/save",
@@ -63,18 +75,6 @@ export const submitGuestRegistry = createAsyncThunk(
   async (_, { rejectWithValue }) => {
     try {
       const { data } = await api.post("/guests/submit");
-      return data;
-    } catch (err) {
-      return rejectWithValue(getErrorMessage(err));
-    }
-  }
-);
-
-export const addMoreGuests = createAsyncThunk(
-  "guests/add",
-  async (newGuests: IGuest[], { rejectWithValue }) => {
-    try {
-      const { data } = await api.patch("/guests/add", { guests: newGuests });
       return data;
     } catch (err) {
       return rejectWithValue(getErrorMessage(err));
@@ -130,6 +130,43 @@ export const adminGetAllRegistries = createAsyncThunk(
   }
 );
 
+// Individual Download
+export const downloadGuestListPDF = createAsyncThunk(
+  "guests/downloadGuestPDF",
+  async (userId: string, { rejectWithValue }) => {
+    try {
+      const response = await api.get(`/guests/report/${userId}`, {
+        responseType: "blob",
+      });
+      FileSaver.saveAs(response.data, `Guest_List_${userId}.pdf`);
+      return "Guest list downloaded successfully";
+    } catch {
+      return rejectWithValue("Failed to download guest list");
+    }
+  }
+);
+
+// NEW: Bulk Admin Export Download
+export const exportFullRegistryPDF = createAsyncThunk(
+  "guests/exportFullRegistry",
+  async (_, { rejectWithValue }) => {
+    try {
+      const response = await api.get("/guests/admin/export-all", {
+        responseType: "blob",
+      });
+      const fileName = `Full_Judiciary_Registry_${new Date().toISOString().split("T")[0]}.pdf`;
+      FileSaver.saveAs(response.data, fileName);
+      return "Full registry exported successfully";
+    } catch {
+      return rejectWithValue("Failed to export full registry");
+    }
+  }
+);
+
+/* =====================================================
+    SLICE
+===================================================== */
+
 const guestSlice = createSlice({
   name: "guests",
   initialState,
@@ -138,52 +175,37 @@ const guestSlice = createSlice({
     clearGuestMessage: (state) => { state.message = null; },
   },
   extraReducers: (builder) => {
-    // GET MY REGISTRY
-    builder.addCase(getMyGuestRegistry.pending, (state) => {
-      state.loading = true;
-    });
+    // My Registry Cases
+    builder.addCase(getMyGuestRegistry.pending, (state) => { state.loading = true; });
     builder.addCase(getMyGuestRegistry.fulfilled, (state, action) => {
       state.loading = false;
       state.myRegistry.status = action.payload.status;
       state.myRegistry.guests = action.payload.guests;
       state.myRegistry.updatedAt = action.payload.updated_at;
     });
-    builder.addCase(getMyGuestRegistry.rejected, (state, action) => {
-      state.loading = false;
-      state.error = action.payload as string;
+
+    // Combined PDF Case Handling (Includes the new Export thunk)
+    const pdfThunks = [downloadGuestListPDF, exportFullRegistryPDF];
+    pdfThunks.forEach(thunk => {
+      builder.addCase(thunk.pending, (state) => { state.loading = true; });
+      builder.addCase(thunk.fulfilled, (state, action) => {
+        state.loading = false;
+        state.message = action.payload as string;
+      });
+      builder.addCase(thunk.rejected, (state, action) => {
+        state.loading = false;
+        state.error = action.payload as string;
+      });
     });
 
-    // SAVE DRAFT
-    builder.addCase(saveGuestDraft.pending, (state) => {
-      state.isSaving = true;
-    });
-    builder.addCase(saveGuestDraft.fulfilled, (state, action) => {
-      state.isSaving = false;
-      state.message = action.payload.message;
-    });
-
-    // SUBMIT
-    builder.addCase(submitGuestRegistry.fulfilled, (state, action) => {
-      state.myRegistry.status = "SUBMITTED";
-      state.message = action.payload.message;
-    });
-
-    // DELETE
-    builder.addCase(deleteMyRegistry.fulfilled, (state) => {
-      state.myRegistry = initialState.myRegistry;
-      state.message = "Registry deleted successfully";
-    });
-
-    // ADMIN GET ALL
-    builder.addCase(adminGetAllRegistries.pending, (state) => {
-      state.admin.loading = true;
-    });
+    // Admin List
+    builder.addCase(adminGetAllRegistries.pending, (state) => { state.admin.loading = true; });
     builder.addCase(adminGetAllRegistries.fulfilled, (state, action) => {
       state.admin.loading = false;
       state.admin.allLists = action.payload;
     });
 
-    // ADMIN GET ONE — ← added these three cases
+    // Admin Details
     builder.addCase(adminGetRegistryById.pending, (state) => {
       state.admin.expandLoading = true;
       state.admin.expandedRegistry = null;
@@ -192,9 +214,20 @@ const guestSlice = createSlice({
       state.admin.expandLoading = false;
       state.admin.expandedRegistry = action.payload;
     });
-    builder.addCase(adminGetRegistryById.rejected, (state) => {
-      state.admin.expandLoading = false;
-      state.admin.expandedRegistry = null;
+
+    // Status Updates
+    builder.addCase(saveGuestDraft.pending, (state) => { state.isSaving = true; });
+    builder.addCase(saveGuestDraft.fulfilled, (state, action) => {
+      state.isSaving = false;
+      state.message = action.payload.message;
+    });
+    builder.addCase(submitGuestRegistry.fulfilled, (state, action) => {
+      state.myRegistry.status = "SUBMITTED";
+      state.message = action.payload.message;
+    });
+    builder.addCase(deleteMyRegistry.fulfilled, (state) => {
+      state.myRegistry = initialState.myRegistry;
+      state.message = "Registry deleted successfully";
     });
   },
 });

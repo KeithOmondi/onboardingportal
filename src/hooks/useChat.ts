@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useCallback } from "react";
 import { io, Socket } from "socket.io-client";
 import { useAppSelector } from "../redux/hooks";
 import api from "../api/api";
@@ -25,8 +25,14 @@ const getSocketUrl = () => {
 
 const SOCKET_URL = getSocketUrl();
 
+/**
+ * Enhanced merge logic to handle both database IDs and optimistic temp IDs
+ */
 const mergeMessage = (prev: ChatMessage[], msg: ChatMessage): ChatMessage[] => {
-  if (msg.id && prev.some((m) => m.id === msg.id)) return prev;
+  const isDuplicate = prev.some(
+    (m) => (msg.id && m.id === msg.id) || (msg._tempId && m._tempId === msg._tempId)
+  );
+  if (isDuplicate) return prev;
   return [...prev, msg];
 };
 
@@ -42,34 +48,28 @@ export const useChat = () => {
 
   const isChatOpenRef = useRef(false);
 
-  const setChatOpen = (open: boolean) => {
+  const setChatOpen = useCallback((open: boolean) => {
     isChatOpenRef.current = open;
     if (open) setUnreadCount(0);
-  };
+  }, []);
 
-  // 1. Fetch History
+  // 1. Fetch History (Direct & Broadcasts)
   useEffect(() => {
-    // Only fetch if we have a valid user and a role
     if (!user?.id || !user?.role) return;
 
     const fetchHistory = async () => {
       setLoading(true);
       try {
         const isAdmin = user.role.toLowerCase().includes("admin");
-        const endpoint = isAdmin ? "/chat/inbox" : "/chat/judge/history";
+        const directEndpoint = isAdmin ? "/chat/inbox" : "/chat/judge/history";
         
         const [directRes, broadcastRes] = await Promise.all([
-          api.get(endpoint),
+          api.get(directEndpoint),
           api.get("/chat/broadcast/history")
         ]);
 
-        // Backend response shape: { status: "success", messages: [...] }
         const directData = directRes.data?.messages || [];
         const broadcastData = broadcastRes.data?.messages || [];
-
-        // DEBUG: This will show you exactly what's being loaded into state
-        console.log(`[useChat] Fetched ${directData.length} messages for ${user.role}`);
-        if (directData.length > 0) console.table(directData);
 
         setMessages(directData);
         setBroadcastMessages(broadcastData);
@@ -81,7 +81,7 @@ export const useChat = () => {
     };
 
     fetchHistory();
-  }, [user?.id, user?.role]); 
+  }, [user?.id, user?.role]);
 
   // 2. Socket Setup
   useEffect(() => {
@@ -94,32 +94,42 @@ export const useChat = () => {
         name: user.full_name 
       },
       withCredentials: true,
-      transports: ["websocket", "polling"],
+      transports: ["websocket"], // Prioritize websocket to avoid polling race conditions
     });
 
     socketRef.current = socket;
 
-    socket.on("connect", () => setConnected(true));
+    socket.on("connect", () => {
+      setConnected(true);
+      console.log(`[useChat] Connected to room: role:${user.role}`);
+    });
+
     socket.on("disconnect", () => setConnected(false));
 
+    // Handle Direct Messages
     socket.on("user:receive", (msg: ChatMessage) => {
       setMessages((prev) => mergeMessage(prev, msg));
       if (!isChatOpenRef.current) setUnreadCount((n) => n + 1);
     });
 
+    // Handle Broadcast Messages (Critical for Judge)
     socket.on("broadcast:receive", (msg: ChatMessage) => {
       setBroadcastMessages((prev) => mergeMessage(prev, msg));
       if (!isChatOpenRef.current) setUnreadCount((n) => n + 1);
     });
 
+    // Admin-specific channel for incoming support requests
     socket.on("admin:receive", (msg: ChatMessage) => {
       setMessages((prev) => mergeMessage(prev, msg));
     });
 
+    // Generic handler to swap optimistic UI with DB confirmed data
     const handleSentSwap = (msg: ChatMessage) => {
-      const targetSetter = msg.recipient_type === "single" ? setMessages : setBroadcastMessages;
-      targetSetter((prev) => {
-        const filtered = prev.filter(m => m.id || m._tempId !== msg._tempId);
+      const isBroadcast = ["broadcast", "group"].includes(msg.recipient_type);
+      const setter = isBroadcast ? setBroadcastMessages : setMessages;
+      
+      setter((prev) => {
+        const filtered = prev.filter(m => m._tempId !== msg._tempId);
         return mergeMessage(filtered, msg);
       });
     };
@@ -150,8 +160,9 @@ export const useChat = () => {
       message,
       created_at: new Date().toISOString(),
     };
-    socketRef.current.emit("user:message", optimistic);
+    
     setMessages((prev) => [...prev, optimistic]);
+    socketRef.current.emit("user:message", optimistic);
   };
 
   const replyToUser = (message: string, recipientId: string) => {
@@ -167,11 +178,16 @@ export const useChat = () => {
       message,
       created_at: new Date().toISOString(),
     };
-    socketRef.current.emit("admin:message:single", { ...msg, recipientId });
+    
     setMessages((prev) => [...prev, msg]);
+    socketRef.current.emit("admin:message:single", { 
+      ...msg, 
+      recipientId // Backend expects recipientId flat in the payload
+    });
   };
 
   return {
+    socket: socketRef.current, // Now exposed for useAdminChat
     messages,
     broadcastMessages,
     sendMessage,
