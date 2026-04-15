@@ -6,7 +6,7 @@ import {
   deleteGalleryItem,
   clearGalleryStatus,
 } from "../../redux/slices/gallerySlice";
-import { MediaType } from "../../interfaces/gallery.interface";
+import { MediaType, type IGalleryItem } from "../../interfaces/gallery.interface";
 import { 
   Upload, 
   Trash2, 
@@ -15,19 +15,25 @@ import {
   Filter, 
   Loader2, 
   AlignLeft,
-  FilePlus
+  FilePlus,
+  Maximize2,
+  X,
+  Download
 } from "lucide-react";
 import toast from "react-hot-toast";
 
 const SuperAdminGallery = () => {
   const dispatch = useAppDispatch();
-  const { items, loading, error  } = useAppSelector((state) => state.gallery);
+  const { items, loading, error } = useAppSelector((state) => state.gallery);
 
   const [file, setFile] = useState<File | null>(null);
   const [preview, setPreview] = useState<string | null>(null);
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [filter, setFilter] = useState<string>("all");
+  
+  // Viewer State
+  const [selectedAsset, setSelectedAsset] = useState<IGalleryItem | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -50,7 +56,6 @@ const SuperAdminGallery = () => {
     formData.append("title", title.trim());
     formData.append("description", description.trim());
 
-    // Handle UI logic directly on resolution rather than relying on an effect
     const result = await dispatch(createGalleryItem(formData));
     
     if (createGalleryItem.fulfilled.match(result)) {
@@ -71,13 +76,10 @@ const SuperAdminGallery = () => {
 
   // --- 2. Effects ---
 
-  // Initialization only
   useEffect(() => {
     dispatch(fetchGallery());
   }, [dispatch]);
 
-  // Handle errors separately - still using Effect for external state (Redux) synchronization,
-  // but we can wrap it to prevent the sync render cycle warning.
   useEffect(() => {
     if (error) {
       toast.error(error);
@@ -87,6 +89,15 @@ const SuperAdminGallery = () => {
       return () => clearTimeout(timer);
     }
   }, [error, dispatch]);
+
+  // Handle Escape key for modal
+  useEffect(() => {
+    const handleEsc = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setSelectedAsset(null);
+    };
+    window.addEventListener("keydown", handleEsc);
+    return () => window.removeEventListener("keydown", handleEsc);
+  }, []);
 
   // --- 3. Derived State ---
   const filteredItems = filter === "all" 
@@ -221,7 +232,7 @@ const SuperAdminGallery = () => {
                     {item.file_type === MediaType.VIDEO ? (
                       <video className="absolute inset-0 w-full h-full object-cover opacity-60" src={item.file_url} muted />
                     ) : (
-                      <img src={item.file_url} alt={item.title} className="w-full h-full object-contain group-hover:scale-105 transition-transform" />
+                      <img src={item.file_url} alt={item.title} className="w-full h-full object-cover group-hover:scale-105 transition-transform" />
                     )}
 
                     <div className="absolute top-4 left-4">
@@ -230,16 +241,28 @@ const SuperAdminGallery = () => {
                       </span>
                     </div>
 
-                    <button
-                      onClick={() => handleDelete(item.id)}
-                      className="absolute top-4 right-4 p-2.5 bg-white text-red-600 rounded-xl opacity-0 group-hover:opacity-100 transition-all hover:bg-red-600 hover:text-white"
-                    >
-                      <Trash2 size={16} />
-                    </button>
+                    {/* OVERLAY ACTIONS */}
+                    <div className="absolute inset-0 bg-[#1A2F1F]/40 opacity-0 group-hover:opacity-100 transition-all flex items-center justify-center gap-3">
+                      <button 
+                        onClick={() => setSelectedAsset(item)}
+                        className="p-3 bg-white text-[#1A2F1F] rounded-full hover:scale-110 transition-transform shadow-xl"
+                        title="View Full Size"
+                      >
+                        <Maximize2 size={18} />
+                      </button>
+                      <button
+                        onClick={() => handleDelete(item.id)}
+                        className="p-3 bg-red-600 text-white rounded-full hover:scale-110 transition-transform shadow-xl"
+                        title="Delete Record"
+                      >
+                        <Trash2 size={18} />
+                      </button>
+                    </div>
                   </div>
 
                   <div className="p-5">
-                    <h3 className="font-bold text-[#1A2F1F] text-sm truncate uppercase mb-3">{item.title}</h3>
+                    <h3 className="font-bold text-[#1A2F1F] text-sm truncate uppercase mb-1">{item.title}</h3>
+                    <p className="text-[10px] text-slate-400 truncate mb-4 italic">{item.description || "No description provided"}</p>
                     <div className="flex items-center justify-between pt-3 border-t border-slate-50">
                       <div className="flex flex-col">
                         <span className="text-[8px] text-slate-300 font-black uppercase tracking-widest leading-none mb-1">Created</span>
@@ -259,6 +282,88 @@ const SuperAdminGallery = () => {
           )}
         </section>
       </div>
+
+      {/* ASSET VIEWER MODAL */}
+      {selectedAsset && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 md:p-10">
+          <div 
+            className="absolute inset-0 bg-[#1A2F1F]/90 backdrop-blur-md transition-opacity"
+            onClick={() => setSelectedAsset(null)}
+          />
+          
+          <div className="relative w-full max-w-6xl max-h-[90vh] bg-white rounded-[2rem] overflow-hidden shadow-2xl flex flex-col md:flex-row animate-in fade-in zoom-in duration-300">
+            {/* Media Area */}
+            <div className="md:w-2/3 h-[50vh] md:h-full bg-slate-900 flex items-center justify-center relative">
+              {selectedAsset.file_type === MediaType.VIDEO ? (
+                <video controls autoPlay className="max-w-full max-h-full" src={selectedAsset.file_url} />
+              ) : (
+                <img src={selectedAsset.file_url} alt={selectedAsset.title} className="max-w-full max-h-full object-contain" />
+              )}
+              
+              <button 
+                onClick={() => setSelectedAsset(null)}
+                className="absolute top-6 left-6 p-2 bg-black/20 hover:bg-black/40 text-white rounded-full transition-colors md:hidden"
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            {/* Info Area */}
+            <div className="md:w-1/3 p-8 md:p-10 flex flex-col justify-between bg-white">
+              <div>
+                <div className="flex justify-between items-start mb-6">
+                  <span className="text-[9px] font-black uppercase px-3 py-1.5 rounded-full bg-[#355E3B]/10 text-[#355E3B] tracking-widest">
+                    {selectedAsset.file_type} Resource
+                  </span>
+                  <button 
+                    onClick={() => setSelectedAsset(null)}
+                    className="p-2 text-slate-400 hover:text-slate-600 transition-colors hidden md:block"
+                  >
+                    <X size={24} />
+                  </button>
+                </div>
+                
+                <h2 className="text-2xl font-serif font-bold text-[#1A2F1F] mb-4 uppercase tracking-tight leading-tight">
+                  {selectedAsset.title}
+                </h2>
+                
+                <div className="space-y-6">
+                  <div>
+                    <h4 className="text-[10px] font-black text-slate-300 uppercase tracking-widest mb-2">Description</h4>
+                    <p className="text-sm text-slate-600 leading-relaxed italic">
+                      {selectedAsset.description || "The administrator has not provided a detailed description for this registry entry."}
+                    </p>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100">
+                      <h4 className="text-[8px] font-black text-slate-400 uppercase tracking-widest mb-1">Created Date</h4>
+                      <p className="text-xs font-bold text-slate-700">{new Date(selectedAsset.created_at).toLocaleDateString()}</p>
+                    </div>
+                    <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100">
+                      <h4 className="text-[8px] font-black text-slate-400 uppercase tracking-widest mb-1">Registry Index</h4>
+                      <p className="text-xs font-bold text-slate-700">#{selectedAsset.id}</p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="mt-8 flex gap-3">
+                <a 
+                  href={selectedAsset.file_url} 
+                  download 
+                  target="_blank" 
+                  rel="noreferrer"
+                  className="flex-1 flex items-center justify-center gap-2 bg-[#355E3B] text-white py-4 rounded-2xl font-black text-[10px] uppercase tracking-widest shadow-lg hover:brightness-110 transition-all"
+                >
+                  <Download size={16} />
+                  Download Original
+                </a>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
