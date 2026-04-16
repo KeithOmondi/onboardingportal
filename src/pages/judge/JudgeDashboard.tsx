@@ -3,7 +3,7 @@ import { useAppDispatch, useAppSelector } from "../../redux/hooks";
 import { fetchEvents } from "../../redux/slices/eventsSlice";
 import { fetchNotices } from "../../redux/slices/noticeSlice";
 import { getMyGuestRegistry } from "../../redux/slices/guestSlice";
-import { useChat } from "../../hooks/useChat"; // Import your chat hook
+import { useChat } from "../../hooks/useChat";
 import type { IJudicialEvent } from "../../interfaces/events.interface";
 import type { INotice } from "../../interfaces/notices.interface";
 
@@ -55,14 +55,18 @@ const MetricCard = ({
   valueColor?: string;
 }) => (
   <div className="bg-[#f2f4f2] border-l-4 border-[#c2a336] rounded-lg p-4 flex flex-col gap-1.5 shadow-sm">
-    <span className="text-xs text-[#25443c] font-semibold uppercase tracking-wider">{label}</span>
+    <span className="text-xs text-[#25443c] font-semibold uppercase tracking-wider">
+      {label}
+    </span>
     <span
       className="text-[26px] font-bold leading-none"
       style={{ color: valueColor ?? "#1a3a32" }}
     >
       {value}
     </span>
-    {sub && <span className="text-[11px] text-[#5c7a6b] font-medium">{sub}</span>}
+    {sub && (
+      <span className="text-[11px] text-[#5c7a6b] font-medium">{sub}</span>
+    )}
   </div>
 );
 
@@ -73,8 +77,8 @@ const EventStatusBadge = ({
 }) => {
   const map = {
     UPCOMING: { bg: "#e1e8e5", text: "#1a3a32", label: "Upcoming" },
-    ONGOING:  { bg: "#c2a336", text: "#ffffff", label: "Ongoing"  },
-    PAST:     { bg: "#f1f1f1", text: "#7d7d7d", label: "Past"     },
+    ONGOING: { bg: "#c2a336", text: "#ffffff", label: "Ongoing" },
+    PAST: { bg: "#f1f1f1", text: "#7d7d7d", label: "Past" },
   } as const;
   const s = map[status];
   return (
@@ -89,10 +93,10 @@ const EventStatusBadge = ({
 
 const NoticeCategoryBadge = ({ category }: { category: string }) => {
   const map: Record<string, { bg: string; text: string }> = {
-    URGENT:   { bg: "#7a1a1a", text: "#ffffff" },
+    URGENT: { bg: "#7a1a1a", text: "#ffffff" },
     DEADLINE: { bg: "#c2a336", text: "#ffffff" },
-    INFO:     { bg: "#1a3a32", text: "#ffffff" },
-    WELCOME:  { bg: "#25443c", text: "#ffffff" },
+    INFO: { bg: "#1a3a32", text: "#ffffff" },
+    WELCOME: { bg: "#25443c", text: "#ffffff" },
   };
   const s = map[category] ?? { bg: "#f1f1f1", text: "#1a3a32" };
   return (
@@ -108,7 +112,7 @@ const NoticeCategoryBadge = ({ category }: { category: string }) => {
 const RegistryStatusBadge = ({ status }: { status: string }) => {
   const map: Record<string, { bg: string; text: string }> = {
     SUBMITTED: { bg: "#1a3a32", text: "#ffffff" },
-    DRAFT:     { bg: "#f2f4f2", text: "#c2a336" },
+    DRAFT: { bg: "#f2f4f2", text: "#c2a336" },
   };
   const s = map[status.toUpperCase()] ?? { bg: "#f1f1f1", text: "#7d7d7d" };
   return (
@@ -153,8 +157,7 @@ const ProgressRow = ({
   </div>
 );
 
-const guestInitial = (name: string) =>
-  name.trim().charAt(0).toUpperCase();
+const guestInitial = (name: string) => name.trim().charAt(0).toUpperCase();
 
 const genderLabel = (gender: string) =>
   gender.charAt(0) + gender.slice(1).toLowerCase();
@@ -164,14 +167,28 @@ const genderLabel = (gender: string) =>
 const JudgeDashboard = () => {
   const dispatch = useAppDispatch();
 
-  // 1. Data from Redux
+  // Redux state
   const { user } = useAppSelector((state) => state.auth);
-  const { events, loading: eventsLoading } = useAppSelector((state) => state.events);
-  const { notices, unreadCount: unreadNotices, loading: noticesLoading } = useAppSelector((state) => state.notices);
-  const { myRegistry, loading: guestsLoading } = useAppSelector((state) => state.guests);
+  const { events, loading: eventsLoading } = useAppSelector(
+    (state) => state.events
+  );
+  const {
+    notices,
+    unreadCount: unreadNotices,
+    loading: noticesLoading,
+  } = useAppSelector((state) => state.notices);
+  const { myRegistry, loading: guestsLoading } = useAppSelector(
+    (state) => state.guests
+  );
 
-  // 2. Data from Chat Hook
-  const { messages, connected, loading: chatLoading } = useChat();
+  // Chat hook — unreadCount persists across refreshes via localStorage
+  const {
+    messages,
+    broadcastMessages,
+    unreadCount: unreadMessages,
+    connected,
+    loading: chatLoading,
+  } = useChat();
 
   useEffect(() => {
     dispatch(fetchEvents("ALL"));
@@ -179,32 +196,45 @@ const JudgeDashboard = () => {
     dispatch(getMyGuestRegistry());
   }, [dispatch]);
 
-  // Calculations
+  // ── Derived values ──────────────────────────────────────────────────────────
+
   const totalEvents = events.length;
-  const upcomingCount = events.filter((e) => deriveEventStatus(e) === "UPCOMING").length;
-  const ongoingCount = events.filter((e) => deriveEventStatus(e) === "ONGOING").length;
+  const upcomingCount = events.filter(
+    (e) => deriveEventStatus(e) === "UPCOMING"
+  ).length;
+  const ongoingCount = events.filter(
+    (e) => deriveEventStatus(e) === "ONGOING"
+  ).length;
   const pastCount = events.filter((e) => deriveEventStatus(e) === "PAST").length;
 
-  // Filtered views
   const upcomingEvents: IJudicialEvent[] = [...events]
     .filter((e) => deriveEventStatus(e) !== "PAST")
-    .sort((a, b) => new Date(a.start_time).getTime() - new Date(b.start_time).getTime())
+    .sort(
+      (a, b) =>
+        new Date(a.start_time).getTime() - new Date(b.start_time).getTime()
+    )
     .slice(0, 4);
 
   const recentNotices: INotice[] = [...notices]
     .sort((a, b) => {
       if (a.is_read !== b.is_read) return a.is_read ? 1 : -1;
-      return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+      return (
+        new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+      );
     })
     .slice(0, 5);
 
   const guestCount = myRegistry.guests.length;
-  const totalMessages = messages.length;
-  
-  const loading = eventsLoading || noticesLoading || guestsLoading || chatLoading;
+
+  // Total messages across both direct and broadcast channels
+  const totalMessages = messages.length + broadcastMessages.length;
+
+  const loading =
+    eventsLoading || noticesLoading || guestsLoading || chatLoading;
 
   const hour = new Date().getHours();
-  const greeting = hour < 12 ? "Good morning" : hour < 17 ? "Good afternoon" : "Good evening";
+  const greeting =
+    hour < 12 ? "Good morning" : hour < 17 ? "Good afternoon" : "Good evening";
   const displayName = user?.full_name ?? "Judge";
 
   return (
@@ -220,13 +250,17 @@ const JudgeDashboard = () => {
             Dashboard
           </h1>
         </div>
-        
-        {/* Connection Status Badge */}
+
+        {/* Connection status */}
         <div className="flex items-center gap-2 px-3 py-1 bg-white border border-[#e2e8e4] rounded-full shadow-sm">
-           <div className={`w-2 h-2 rounded-full ${connected ? 'bg-emerald-500 animate-pulse' : 'bg-red-400'}`} />
-           <span className="text-[10px] font-bold text-[#1a3a32] uppercase tracking-tighter">
-             {connected ? 'Securely Connected' : 'Offline'}
-           </span>
+          <div
+            className={`w-2 h-2 rounded-full ${
+              connected ? "bg-emerald-500 animate-pulse" : "bg-red-400"
+            }`}
+          />
+          <span className="text-[10px] font-bold text-[#1a3a32] uppercase tracking-tighter">
+            {connected ? "Securely Connected" : "Offline"}
+          </span>
         </div>
       </div>
 
@@ -241,7 +275,11 @@ const JudgeDashboard = () => {
         <MetricCard
           label="Upcoming Events"
           value={upcomingCount}
-          sub={ongoingCount > 0 ? `${ongoingCount} ongoing now` : "Scheduled Sessions"}
+          sub={
+            ongoingCount > 0
+              ? `${ongoingCount} ongoing now`
+              : "Scheduled Sessions"
+          }
           valueColor="#c2a336"
         />
         <MetricCard
@@ -250,12 +288,20 @@ const JudgeDashboard = () => {
           sub={`of ${notices.length} total updates`}
           valueColor={unreadNotices > 0 ? "#7a1a1a" : "#1a3a32"}
         />
+
+        {/*
+          Messages card — mirrors the Notices card pattern:
+          • large number = unread count (persisted across refreshes)
+          • sub-label     = "X of Y total messages"
+          • red value     = there are unread messages
+        */}
         <MetricCard
-          label="Messages"
-          value={totalMessages}
-          sub={connected ? "Active Chat Session" : "History Loaded"}
-          valueColor="#1a3a32"
+          label="Unread Messages"
+          value={unreadMessages}
+          sub={`of ${totalMessages} total message${totalMessages !== 1 ? "s" : ""}`}
+          valueColor={unreadMessages > 0 ? "#7a1a1a" : "#1a3a32"}
         />
+
         <MetricCard
           label="Guest Registry"
           value={guestCount}
@@ -270,7 +316,7 @@ const JudgeDashboard = () => {
         {/* Upcoming Events */}
         <div className="bg-white border border-[#e2e8e4] rounded-xl p-5 shadow-sm">
           <p className="text-[12px] font-bold text-[#1a3a32] uppercase tracking-widest mb-4 flex items-center gap-2">
-            <span className="w-2 h-4 bg-[#c2a336] rounded-sm"></span>
+            <span className="w-2 h-4 bg-[#c2a336] rounded-sm" />
             Upcoming Events
           </p>
           {upcomingEvents.length === 0 ? (
@@ -294,7 +340,8 @@ const JudgeDashboard = () => {
                     </p>
                     {event.location && (
                       <p className="text-[10px] text-[#c2a336] font-semibold mt-0.5 truncate italic">
-                        {event.is_virtual ? "Virtual Session · " : ""}{event.location}
+                        {event.is_virtual ? "Virtual Session · " : ""}
+                        {event.location}
                       </p>
                     )}
                   </div>
@@ -308,7 +355,7 @@ const JudgeDashboard = () => {
         {/* Recent Notices */}
         <div className="bg-white border border-[#e2e8e4] rounded-xl p-5 shadow-sm">
           <p className="text-[12px] font-bold text-[#1a3a32] uppercase tracking-widest mb-4 flex items-center gap-2">
-            <span className="w-2 h-4 bg-[#1a3a32] rounded-sm"></span>
+            <span className="w-2 h-4 bg-[#1a3a32] rounded-sm" />
             Recent Notices
           </p>
           {recentNotices.length === 0 ? (
@@ -318,10 +365,7 @@ const JudgeDashboard = () => {
           ) : (
             <div className="flex flex-col divide-y divide-[#f2f4f2]">
               {recentNotices.map((notice) => (
-                <div
-                  key={notice.id}
-                  className="flex items-start gap-3 py-3.5"
-                >
+                <div key={notice.id} className="flex items-start gap-3 py-3.5">
                   <span
                     className="w-2.5 h-2.5 rounded-full flex-shrink-0 mt-1 shadow-sm"
                     style={{
@@ -357,7 +401,7 @@ const JudgeDashboard = () => {
       {/* ── Bottom Grid ── */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
 
-        {/* Event Breakdown */}
+        {/* Event Statistics */}
         <div className="bg-white border border-[#e2e8e4] rounded-xl p-5 shadow-sm">
           <p className="text-[12px] font-bold text-[#1a3a32] uppercase tracking-widest mb-5">
             Event Statistics
