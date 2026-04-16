@@ -19,10 +19,30 @@ import type { EventStatus } from "../../interfaces/events.interface";
 
 const getStatusStyles = (status: string) => {
   switch (status) {
-    case "UPCOMING": return { color: "text-blue-700", bg: "bg-blue-50", border: "border-blue-100" };
-    case "ONGOING":  return { color: "text-green-700", bg: "bg-green-50", border: "border-green-200 animate-pulse" };
-    case "PAST":     return { color: "text-stone-500", bg: "bg-stone-50", border: "border-stone-100" };
-    default:         return { color: "text-[#C9922A]", bg: "bg-amber-50", border: "border-amber-100" };
+    case "UPCOMING":
+      return {
+        color: "text-blue-700",
+        bg: "bg-blue-50",
+        border: "border-blue-100",
+      };
+    case "ONGOING":
+      return {
+        color: "text-green-700",
+        bg: "bg-green-50",
+        border: "border-green-200 animate-pulse",
+      };
+    case "PAST":
+      return {
+        color: "text-stone-500",
+        bg: "bg-stone-50",
+        border: "border-stone-100",
+      };
+    default:
+      return {
+        color: "text-[#C9922A]",
+        bg: "bg-amber-50",
+        border: "border-amber-100",
+      };
   }
 };
 
@@ -30,18 +50,20 @@ const getStatusStyles = (status: string) => {
  * Syncs the ISO string from DB to the local browser timezone (EAT).
  */
 const formatLocalTime = (dateSource: string) => {
-  return new Date(dateSource).toLocaleTimeString("en-GB", {
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: true,
-  }).toUpperCase();
+  return new Date(dateSource)
+    .toLocaleTimeString("en-GB", {
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: true,
+    })
+    .toUpperCase();
 };
 
 const formatDate = (dateSource: string) =>
-  new Date(dateSource).toLocaleDateString("en-KE", { 
-    month: "long", 
+  new Date(dateSource).toLocaleDateString("en-KE", {
+    month: "long",
     day: "numeric",
-    year: "numeric" 
+    year: "numeric",
   });
 
 // ── Component ─────────────────────────────────────────────────────────
@@ -49,7 +71,7 @@ const formatDate = (dateSource: string) =>
 const JudgeEvents = () => {
   const dispatch = useAppDispatch();
   const { events, loading, error, currentFilter } = useAppSelector(
-    (state) => state.events
+    (state) => state.events,
   );
 
   useEffect(() => {
@@ -62,8 +84,8 @@ const JudgeEvents = () => {
 
   // Source of Truth: The 'current_status' injected by Postgres via Redux
   const nextSession =
-    events.find((e) => e.current_status === "ONGOING") ?? 
-    events.find((e) => e.current_status === "UPCOMING") ?? 
+    events.find((e) => e.current_status === "ONGOING") ??
+    events.find((e) => e.current_status === "UPCOMING") ??
     (events.length > 0 ? events[0] : null);
 
   return (
@@ -72,14 +94,18 @@ const JudgeEvents = () => {
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
         <div>
           <h1 className="text-2xl font-bold font-serif text-[#1a3a2a] tracking-tight">
-            JUDICIAL EVENTS REGISTRY
+            EVENTS CALENDAR
           </h1>
-          <p className="text-xs text-stone-400 font-medium mt-1">Nairobi Standard Time (GMT+3)</p>
+          <p className="text-xs text-stone-400 font-medium mt-1">
+            Nairobi Standard Time (GMT+3)
+          </p>
         </div>
 
         <div className="flex bg-stone-100 p-1 rounded-xl border border-stone-200 overflow-x-auto no-scrollbar">
           {["Upcoming", "Ongoing", "Past", "All"].map((tab) => {
-            const isActive = (currentFilter === "ALL" && tab === "All") || currentFilter === tab.toUpperCase();
+            const isActive =
+              (currentFilter === "ALL" && tab === "All") ||
+              currentFilter === tab.toUpperCase();
             return (
               <button
                 key={tab}
@@ -102,24 +128,34 @@ const JudgeEvents = () => {
         <div className="space-y-4">
           <div className="bg-white border border-stone-200 p-5 rounded-2xl shadow-sm">
             <h3 className="text-xs font-black uppercase tracking-widest text-stone-400 mb-4 flex items-center gap-2">
-              <Filter size={14} /> Registry Summary
+              <Filter size={14} /> Events summery
             </h3>
             <div className="space-y-4">
               <div className="flex justify-between items-center">
-                <span className="text-sm font-medium text-stone-600">Events Found</span>
-                <span className="text-lg font-bold text-[#1a3a2a]">{events.length}</span>
+                <span className="text-sm font-medium text-stone-600">
+                  Events Found
+                </span>
+                <span className="text-lg font-bold text-[#1a3a2a]">
+                  {events.length}
+                </span>
               </div>
               <div className="h-px bg-stone-100" />
               <p className="text-[11px] text-stone-400 italic leading-relaxed">
-                Displaying <strong>{currentFilter.toLowerCase()}</strong> sessions. Calculations are synced with the Judiciary server time.
+                Displaying <strong>{currentFilter.toLowerCase()}</strong>{" "}
+                sessions. Calculations are sync with the orhc data.
               </p>
             </div>
           </div>
 
           <div className="bg-[#1a3a2a] text-white p-6 rounded-2xl shadow-lg relative overflow-hidden group">
             <div className="relative z-10">
-              <CalendarIcon size={24} className="text-[#C9922A] mb-4 group-hover:scale-110 transition-transform" />
-              <p className="text-sm font-medium opacity-80">Next / Active Session</p>
+              <CalendarIcon
+                size={24}
+                className="text-[#C9922A] mb-4 group-hover:scale-110 transition-transform"
+              />
+              <p className="text-sm font-medium opacity-80">
+                Next / Active Session
+              </p>
               {nextSession ? (
                 <>
                   <h4 className="text-lg font-bold font-serif mt-1">
@@ -129,7 +165,8 @@ const JudgeEvents = () => {
                     {formatLocalTime(nextSession.start_time)}
                     {nextSession.end_time && (
                       <span className="font-normal opacity-75">
-                        {" – "}{formatLocalTime(nextSession.end_time)}
+                        {" – "}
+                        {formatLocalTime(nextSession.end_time)}
                       </span>
                     )}
                   </p>
@@ -144,7 +181,9 @@ const JudgeEvents = () => {
                   )}
                 </>
               ) : (
-                <p className="text-sm mt-2 opacity-60 italic">No scheduled sessions</p>
+                <p className="text-sm mt-2 opacity-60 italic">
+                  No scheduled sessions
+                </p>
               )}
             </div>
             <div className="absolute -right-4 -bottom-4 opacity-10 group-hover:rotate-12 transition-transform duration-500">
@@ -158,7 +197,9 @@ const JudgeEvents = () => {
           {loading ? (
             <div className="flex flex-col items-center justify-center py-24 text-stone-400">
               <Loader2 className="animate-spin mb-4" size={32} />
-              <p className="text-sm font-medium tracking-wide">Retrieving verified judicial records...</p>
+              <p className="text-sm font-medium tracking-wide">
+                Retrieving verified records...
+              </p>
             </div>
           ) : error ? (
             <div className="flex items-center gap-3 p-6 bg-red-50 text-red-700 rounded-2xl border border-red-100">
@@ -170,31 +211,37 @@ const JudgeEvents = () => {
               <div className="bg-stone-100 w-12 h-12 rounded-full flex items-center justify-center mx-auto mb-4">
                 <CalendarIcon className="text-stone-300" size={20} />
               </div>
-              <p className="text-stone-400 font-medium">No judicial events found for the current selection.</p>
+              <p className="text-stone-400 font-medium">
+                No events found for the current selection.
+              </p>
             </div>
           ) : (
             <div className="space-y-4">
               {events.map((event) => {
-                const eventDate   = new Date(event.start_time);
-                const cardStatus  = event.current_status || "UNKNOWN";
-                const styles      = getStatusStyles(cardStatus);
+                const eventDate = new Date(event.start_time);
+                const cardStatus = event.current_status || "UNKNOWN";
+                const styles = getStatusStyles(cardStatus);
 
                 return (
                   <div key={event.id} className="group relative flex gap-6">
                     {/* Date Sidebar */}
                     <div className="hidden sm:flex flex-col items-center min-w-[64px] pt-2">
                       <span className="text-[10px] font-black text-stone-400 uppercase tracking-tighter">
-                        {eventDate.toLocaleString("default", { month: "short" })}
+                        {eventDate.toLocaleString("default", {
+                          month: "short",
+                        })}
                       </span>
                       <span className="text-2xl font-bold text-stone-800 tabular-nums">
-                        {eventDate.getDate().toString().padStart(2, '0')}
+                        {eventDate.getDate().toString().padStart(2, "0")}
                       </span>
                       <div className="w-px h-full bg-stone-100 mt-2 group-last:bg-transparent" />
                     </div>
 
                     <div
                       className={`flex-1 bg-white border rounded-2xl overflow-hidden hover:shadow-xl hover:shadow-stone-200/50 transition-all duration-300 transform hover:-translate-y-0.5 ${
-                        cardStatus === "PAST" ? "border-stone-100 opacity-80" : "border-stone-200"
+                        cardStatus === "PAST"
+                          ? "border-stone-100 opacity-80"
+                          : "border-stone-200"
                       }`}
                     >
                       <div className="p-6">
@@ -206,8 +253,14 @@ const JudgeEvents = () => {
                             {cardStatus}
                           </div>
                           <div className="flex items-center gap-2 text-stone-400">
-                            {event.is_virtual ? <Video size={16} /> : <MapPin size={16} />}
-                            <span className="text-xs font-semibold uppercase tracking-wider">{event.location}</span>
+                            {event.is_virtual ? (
+                              <Video size={16} />
+                            ) : (
+                              <MapPin size={16} />
+                            )}
+                            <span className="text-xs font-semibold uppercase tracking-wider">
+                              {event.location}
+                            </span>
                           </div>
                         </div>
 
@@ -228,7 +281,8 @@ const JudgeEvents = () => {
                                 {formatLocalTime(event.start_time)}
                                 {event.end_time && (
                                   <span className="font-normal text-stone-400">
-                                    {" – "}{formatLocalTime(event.end_time)}
+                                    {" – "}
+                                    {formatLocalTime(event.end_time)}
                                   </span>
                                 )}
                               </span>
@@ -236,7 +290,9 @@ const JudgeEvents = () => {
 
                             <div className="flex items-center gap-2">
                               <Users size={14} className="text-stone-400" />
-                              <span className="text-[11px] font-bold uppercase tracking-wider text-stone-500">{event.organizer}</span>
+                              <span className="text-[11px] font-bold uppercase tracking-wider text-stone-500">
+                                {event.organizer}
+                              </span>
                             </div>
                           </div>
 

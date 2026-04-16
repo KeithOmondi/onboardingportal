@@ -10,7 +10,6 @@ const initialState: IGalleryState = {
   success: false,
 };
 
-// Helper to extract error message safely
 const getErrorMessage = (error: unknown, defaultMessage: string): string => {
   if (axios.isAxiosError(error)) {
     return error.response?.data?.message || defaultMessage;
@@ -20,9 +19,6 @@ const getErrorMessage = (error: unknown, defaultMessage: string): string => {
 
 // ── Async Thunks ─────────────────────────────────────────────────────────────
 
-/**
- * Fetch all gallery items
- */
 export const fetchGallery = createAsyncThunk(
   "gallery/fetchAll",
   async (_, { rejectWithValue }) => {
@@ -36,15 +32,17 @@ export const fetchGallery = createAsyncThunk(
 );
 
 /**
- * Create new gallery item (Supports Image/Video via FormData)
+ * Updated to handle multiple uploads
+ * Payload returned from backend is now IGalleryItem[]
  */
-export const createGalleryItem = createAsyncThunk(
+export const createGalleryItems = createAsyncThunk(
   "gallery/create",
   async (formData: FormData, { rejectWithValue }) => {
     try {
       const { data } = await api.post(`/gallery/create`, formData, {
         headers: { "Content-Type": "multipart/form-data" },
       });
+      // Backend returns { status: "success", data: [...] }
       return data.data;
     } catch (error: unknown) {
       return rejectWithValue(getErrorMessage(error, "Upload failed"));
@@ -52,9 +50,6 @@ export const createGalleryItem = createAsyncThunk(
   }
 );
 
-/**
- * Delete a gallery item by ID
- */
 export const deleteGalleryItem = createAsyncThunk(
   "gallery/delete",
   async (id: number, { rejectWithValue }) => {
@@ -91,16 +86,17 @@ const gallerySlice = createSlice({
         state.loading = false;
         state.error = action.payload as string;
       })
-      .addCase(createGalleryItem.pending, (state) => {
+      .addCase(createGalleryItems.pending, (state) => {
         state.loading = true;
         state.success = false;
       })
-      .addCase(createGalleryItem.fulfilled, (state, action: PayloadAction<IGalleryItem>) => {
+      .addCase(createGalleryItems.fulfilled, (state, action: PayloadAction<IGalleryItem[]>) => {
         state.loading = false;
         state.success = true;
-        state.items.unshift(action.payload);
+        // Logic fix: Use unshift with spread to add all new items to the top
+        state.items.unshift(...action.payload);
       })
-      .addCase(createGalleryItem.rejected, (state, action) => {
+      .addCase(createGalleryItems.rejected, (state, action) => {
         state.loading = false;
         state.error = action.payload as string;
       })

@@ -2,7 +2,7 @@ import { useEffect, useState, useRef, useCallback } from "react";
 import { useAppDispatch, useAppSelector } from "../../redux/hooks";
 import {
   fetchGallery,
-  createGalleryItem,
+  createGalleryItems, // Corrected to match Slice export
   deleteGalleryItem,
   clearGalleryStatus,
 } from "../../redux/slices/gallerySlice";
@@ -21,7 +21,7 @@ import toast from "react-hot-toast";
 
 const AdminGallery = () => {
   const dispatch = useAppDispatch();
-  const { items, loading, error  } = useAppSelector((state) => state.gallery);
+  const { items, loading, error } = useAppSelector((state) => state.gallery);
 
   const [file, setFile] = useState<File | null>(null);
   const [preview, setPreview] = useState<string | null>(null);
@@ -46,14 +46,15 @@ const AdminGallery = () => {
     if (!file || !title.trim()) return toast.error("File and Title are required");
 
     const formData = new FormData();
+    // We append the single file, but use the plural thunk as defined in the slice
     formData.append("file", file);
     formData.append("title", title.trim());
     formData.append("description", description.trim());
 
-    // Handle UI logic directly on resolution rather than relying on an effect
-    const result = await dispatch(createGalleryItem(formData));
+    // Dispatching the correct thunk: createGalleryItems
+    const result = await dispatch(createGalleryItems(formData));
     
-    if (createGalleryItem.fulfilled.match(result)) {
+    if (createGalleryItems.fulfilled.match(result)) {
       toast.success("Asset successfully indexed in vault");
       resetForm();
       dispatch(clearGalleryStatus());
@@ -71,13 +72,10 @@ const AdminGallery = () => {
 
   // --- 2. Effects ---
 
-  // Initialization only
   useEffect(() => {
     dispatch(fetchGallery());
   }, [dispatch]);
 
-  // Handle errors separately - still using Effect for external state (Redux) synchronization,
-  // but we can wrap it to prevent the sync render cycle warning.
   useEffect(() => {
     if (error) {
       toast.error(error);
@@ -160,15 +158,21 @@ const AdminGallery = () => {
                     <p className="text-[9px] text-slate-300 mt-1 italic">JPG, PNG, WEBP or MP4</p>
                   </div>
                 )}
-                <input ref={fileInputRef} type="file" hidden onChange={(e) => {
-                  const selected = e.target.files?.[0] ?? null;
-                  setFile(selected);
-                  if (selected) {
-                    const reader = new FileReader();
-                    reader.onloadend = () => setPreview(reader.result as string);
-                    reader.readAsDataURL(selected);
-                  }
-                }} accept="image/*,video/*" />
+                <input 
+                  ref={fileInputRef} 
+                  type="file" 
+                  hidden 
+                  onChange={(e) => {
+                    const selected = e.target.files?.[0] ?? null;
+                    setFile(selected);
+                    if (selected) {
+                      const reader = new FileReader();
+                      reader.onloadend = () => setPreview(reader.result as string);
+                      reader.readAsDataURL(selected);
+                    }
+                  }} 
+                  accept="image/*,video/*" 
+                />
               </div>
 
               <div className="space-y-4">

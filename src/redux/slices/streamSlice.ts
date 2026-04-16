@@ -1,5 +1,5 @@
 import { createSlice, createAsyncThunk } from "@reduxjs/toolkit";
-import api from "../../api/api";
+import api from "../../api/api"; 
 
 /* ─── TYPES ────────────────────────────────────────────────────────── */
 
@@ -9,6 +9,7 @@ interface StreamFileState {
   error: string | null;
 }
 
+// Fixed: This is now correctly used in the catch block
 interface KnownError {
   response?: {
     data?: {
@@ -28,25 +29,29 @@ const initialState: StreamFileState = {
 
 /* ─── THUNK ───────────────────────────────────────────────────────── */
 
-export const streamFile = createAsyncThunk<
-  string, // Return type (the blob URL)
-  string, // Argument type (the url to fetch)
+export const fetchStreamFile = createAsyncThunk<
+  string, 
+  string | number, 
   { rejectValue: string }
 >(
   "streamFile/fetch",
-  async (url, thunkAPI) => {
+  async (documentId, thunkAPI) => {
     try {
-      // ✅ responseType: "blob" tells axios to treat the response as binary
-      const response = await api.get<Blob>("/documents/stream-file", {
-        params: { url },
+      const response = await api.get<Blob>(`/documents/stream/${documentId}`, {
         responseType: "blob", 
       });
 
-      // ✅ Create a local blob URL the browser can render inline
-      const blobUrl = URL.createObjectURL(response.data);
-      return blobUrl;
+      if (response.data.type === "application/json") {
+         const text = await response.data.text();
+         const errorData = JSON.parse(text);
+         return thunkAPI.rejectWithValue(errorData.message || "Unauthorized access");
+      }
+
+      return URL.createObjectURL(response.data);
     } catch (err) {
+      // Fixed: Removed 'any' and used the KnownError interface
       const error = err as KnownError;
+      
       return thunkAPI.rejectWithValue(
         error.response?.data?.message || error.message || "Failed to stream file"
       );
@@ -60,7 +65,6 @@ const streamFileSlice = createSlice({
   name: "streamFile",
   initialState,
   reducers: {
-    // ✅ Call this when modal closes to free browser memory
     revokeBlobUrl: (state) => {
       if (state.blobUrl) {
         URL.revokeObjectURL(state.blobUrl);
@@ -74,20 +78,20 @@ const streamFileSlice = createSlice({
   },
   extraReducers: (builder) => {
     builder
-      .addCase(streamFile.pending, (state) => {
+      .addCase(fetchStreamFile.pending, (state) => {
         state.loading = true;
         state.error = null;
-        // ✅ Revoke previous blob URL before loading a new one to prevent memory leaks
+        
         if (state.blobUrl) {
           URL.revokeObjectURL(state.blobUrl);
           state.blobUrl = null;
         }
       })
-      .addCase(streamFile.fulfilled, (state, action) => {
+      .addCase(fetchStreamFile.fulfilled, (state, action) => {
         state.loading = false;
         state.blobUrl = action.payload;
       })
-      .addCase(streamFile.rejected, (state, action) => {
+      .addCase(fetchStreamFile.rejected, (state, action) => {
         state.loading = false;
         state.error = action.payload ?? "An unexpected error occurred while streaming";
       });

@@ -21,6 +21,7 @@ const AdminSidebar = ({ isOpen, onClose }: AdminSidebarProps) => {
     { title: 'Oath Details', icon: <Gavel size={20} />, path: '/admin/oath' },
     { title: 'Guest List', icon: <Group size={20} />, path: '/admin/guest-list' },
     { title: 'Notice Board', icon: <Pen size={20} />, path: '/admin/notice-board' },
+    { title: 'Documents', icon: <MessageCircle size={20} />, path: '/admin/orhc-documents' },
     { title: 'Events Board', icon: <ShowerHeadIcon size={20} />, path: '/admin/events-board' },
     { title: 'Gallery', icon: <Camera size={20} />, path: '/admin/admin-gallery' },
     { title: 'Messages', icon: <MessageCircle size={20} />, path: '/admin/messages' },
