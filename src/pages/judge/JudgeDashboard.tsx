@@ -7,20 +7,23 @@ import { useChat } from "../../hooks/useChat";
 import type { IJudicialEvent } from "../../interfaces/events.interface";
 import type { INotice } from "../../interfaces/notices.interface";
 
-// ── Helpers ───────────────────────────────────────────────────────────────────
+// ── Helpers (Locked to UTC to prevent 3-hour shift) ───────────────────────────
 
 const formatDate = (dateStr: string | Date) =>
   new Date(dateStr).toLocaleDateString("en-KE", {
     day: "2-digit",
     month: "short",
     year: "numeric",
+    timeZone: "UTC", // Fix: Prevents local timezone offset
   });
 
 const formatTime = (dateStr: string | Date) =>
-  new Date(dateStr).toLocaleTimeString("en-KE", {
+  new Date(dateStr).toLocaleTimeString("en-GB", {
     hour: "2-digit",
     minute: "2-digit",
-  });
+    hour12: true,
+    timeZone: "UTC", // Fix: Prevents local timezone offset
+  }).toUpperCase();
 
 const timeAgo = (dateStr: string | Date) => {
   const diff = Date.now() - new Date(dateStr).getTime();
@@ -30,12 +33,17 @@ const timeAgo = (dateStr: string | Date) => {
   return `${days}d ago`;
 };
 
+/**
+ * Derives status based on current time. 
+ * Note: If your server is in UTC, ensure 'now' is compared correctly.
+ */
 const deriveEventStatus = (
   event: IJudicialEvent
 ): "UPCOMING" | "ONGOING" | "PAST" => {
-  const now = Date.now();
+  const now = new Date().getTime();
   const start = new Date(event.start_time).getTime();
   const end = new Date(event.end_time).getTime();
+  
   if (now < start) return "UPCOMING";
   if (now >= start && now <= end) return "ONGOING";
   return "PAST";
@@ -167,7 +175,6 @@ const genderLabel = (gender: string) =>
 const JudgeDashboard = () => {
   const dispatch = useAppDispatch();
 
-  // Redux state
   const { user } = useAppSelector((state) => state.auth);
   const { events, loading: eventsLoading } = useAppSelector(
     (state) => state.events
@@ -181,7 +188,6 @@ const JudgeDashboard = () => {
     (state) => state.guests
   );
 
-  // Chat hook — unreadCount persists across refreshes via localStorage
   const {
     messages,
     broadcastMessages,
@@ -196,7 +202,7 @@ const JudgeDashboard = () => {
     dispatch(getMyGuestRegistry());
   }, [dispatch]);
 
-  // ── Derived values ──────────────────────────────────────────────────────────
+  // ── Derived values (Status logic updated) ──────────────────────────────────
 
   const totalEvents = events.length;
   const upcomingCount = events.filter(
@@ -225,16 +231,11 @@ const JudgeDashboard = () => {
     .slice(0, 5);
 
   const guestCount = myRegistry.guests.length;
-
-  // Total messages across both direct and broadcast channels
   const totalMessages = messages.length + broadcastMessages.length;
-
-  const loading =
-    eventsLoading || noticesLoading || guestsLoading || chatLoading;
+  const loading = eventsLoading || noticesLoading || guestsLoading || chatLoading;
 
   const hour = new Date().getHours();
-  const greeting =
-    hour < 12 ? "Good morning" : hour < 17 ? "Good afternoon" : "Good evening";
+  const greeting = hour < 12 ? "Good morning" : hour < 17 ? "Good afternoon" : "Good evening";
   const displayName = user?.full_name ?? "Judge";
 
   return (
@@ -251,7 +252,6 @@ const JudgeDashboard = () => {
           </h1>
         </div>
 
-        {/* Connection status */}
         <div className="flex items-center gap-2 px-3 py-1 bg-white border border-[#e2e8e4] rounded-full shadow-sm">
           <div
             className={`w-2 h-2 rounded-full ${
@@ -270,16 +270,12 @@ const JudgeDashboard = () => {
         </p>
       )}
 
-      {/* ── Metric Cards ── */}
+      {/* Metrics */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
         <MetricCard
           label="Upcoming Events"
           value={upcomingCount}
-          sub={
-            ongoingCount > 0
-              ? `${ongoingCount} ongoing now`
-              : "Scheduled Sessions"
-          }
+          sub={ongoingCount > 0 ? `${ongoingCount} ongoing now` : "Scheduled Sessions"}
           valueColor="#c2a336"
         />
         <MetricCard
@@ -288,20 +284,12 @@ const JudgeDashboard = () => {
           sub={`of ${notices.length} total updates`}
           valueColor={unreadNotices > 0 ? "#7a1a1a" : "#1a3a32"}
         />
-
-        {/*
-          Messages card — mirrors the Notices card pattern:
-          • large number = unread count (persisted across refreshes)
-          • sub-label     = "X of Y total messages"
-          • red value     = there are unread messages
-        */}
         <MetricCard
           label="Unread Messages"
           value={unreadMessages}
           sub={`of ${totalMessages} total message${totalMessages !== 1 ? "s" : ""}`}
           valueColor={unreadMessages > 0 ? "#7a1a1a" : "#1a3a32"}
         />
-
         <MetricCard
           label="Guest Registry"
           value={guestCount}
@@ -310,10 +298,8 @@ const JudgeDashboard = () => {
         />
       </div>
 
-      {/* ── Main Grid ── */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
-
-        {/* Upcoming Events */}
+        {/* Upcoming Events - Fixed Times */}
         <div className="bg-white border border-[#e2e8e4] rounded-xl p-5 shadow-sm">
           <p className="text-[12px] font-bold text-[#1a3a32] uppercase tracking-widest mb-4 flex items-center gap-2">
             <span className="w-2 h-4 bg-[#c2a336] rounded-sm" />
@@ -326,17 +312,13 @@ const JudgeDashboard = () => {
           ) : (
             <div className="flex flex-col divide-y divide-[#f2f4f2]">
               {upcomingEvents.map((event) => (
-                <div
-                  key={event.id}
-                  className="flex items-center justify-between py-3.5 gap-3"
-                >
+                <div key={event.id} className="flex items-center justify-between py-3.5 gap-3">
                   <div className="min-w-0">
                     <p className="text-sm font-bold text-[#1a3a32] truncate">
                       {event.title}
                     </p>
                     <p className="text-[11px] text-[#5c7a6b] mt-0.5 font-medium">
-                      {formatDate(event.start_time)} ·{" "}
-                      {formatTime(event.start_time)}
+                      {formatDate(event.start_time)} · {formatTime(event.start_time)}
                     </p>
                     {event.location && (
                       <p className="text-[10px] text-[#c2a336] font-semibold mt-0.5 truncate italic">
@@ -352,7 +334,7 @@ const JudgeDashboard = () => {
           )}
         </div>
 
-        {/* Recent Notices */}
+        {/* Notices */}
         <div className="bg-white border border-[#e2e8e4] rounded-xl p-5 shadow-sm">
           <p className="text-[12px] font-bold text-[#1a3a32] uppercase tracking-widest mb-4 flex items-center gap-2">
             <span className="w-2 h-4 bg-[#1a3a32] rounded-sm" />
@@ -368,27 +350,18 @@ const JudgeDashboard = () => {
                 <div key={notice.id} className="flex items-start gap-3 py-3.5">
                   <span
                     className="w-2.5 h-2.5 rounded-full flex-shrink-0 mt-1 shadow-sm"
-                    style={{
-                      background: notice.is_read ? "#d1d1d1" : "#c2a336",
-                    }}
+                    style={{ background: notice.is_read ? "#d1d1d1" : "#c2a336" }}
                   />
                   <div className="min-w-0 flex-1">
                     <div className="flex items-start justify-between gap-2">
-                      <p
-                        className="text-sm text-[#1a3a32] leading-relaxed"
-                        style={{ fontWeight: notice.is_read ? 500 : 700 }}
-                      >
+                      <p className="text-sm text-[#1a3a32] leading-relaxed" style={{ fontWeight: notice.is_read ? 500 : 700 }}>
                         {notice.title}
                       </p>
                       <NoticeCategoryBadge category={notice.category} />
                     </div>
                     <p className="text-[11px] text-[#5c7a6b] mt-0.5 font-medium">
                       {timeAgo(notice.created_at)}
-                      {!notice.is_read && (
-                        <span className="ml-1.5 text-[#c2a336] font-bold italic">
-                          · New
-                        </span>
-                      )}
+                      {!notice.is_read && <span className="ml-1.5 text-[#c2a336] font-bold italic">· New</span>}
                     </p>
                   </div>
                 </div>
@@ -398,73 +371,35 @@ const JudgeDashboard = () => {
         </div>
       </div>
 
-      {/* ── Bottom Grid ── */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-
-        {/* Event Statistics */}
+        {/* Statistics */}
         <div className="bg-white border border-[#e2e8e4] rounded-xl p-5 shadow-sm">
           <p className="text-[12px] font-bold text-[#1a3a32] uppercase tracking-widest mb-5">
             Event Statistics
           </p>
           <div className="flex flex-col gap-4">
-            <ProgressRow
-              label="Upcoming"
-              count={upcomingCount}
-              total={totalEvents}
-              color="#c2a336"
-              textColor="#c2a336"
-            />
-            <ProgressRow
-              label="Ongoing"
-              count={ongoingCount}
-              total={totalEvents}
-              color="#1a3a32"
-              textColor="#1a3a32"
-            />
-            <ProgressRow
-              label="Past"
-              count={pastCount}
-              total={totalEvents}
-              color="#d1d1d1"
-              textColor="#7d7d7d"
-            />
+            <ProgressRow label="Upcoming" count={upcomingCount} total={totalEvents} color="#c2a336" textColor="#c2a336" />
+            <ProgressRow label="Ongoing" count={ongoingCount} total={totalEvents} color="#1a3a32" textColor="#1a3a32" />
+            <ProgressRow label="Past" count={pastCount} total={totalEvents} color="#d1d1d1" textColor="#7d7d7d" />
           </div>
         </div>
 
-        {/* Guest Registry */}
+        {/* Registry */}
         <div className="bg-[#1a3a32] border border-[#1a3a32] rounded-xl p-5 shadow-lg text-white">
           <p className="text-[12px] font-bold text-[#c2a336] uppercase tracking-widest mb-4">
             Guest Registry
           </p>
           <div className="flex items-center gap-4 py-2">
             <div className="w-12 h-12 rounded-full bg-[#c2a336] flex items-center justify-center flex-shrink-0 shadow-md">
-              <svg
-                width="24"
-                height="24"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="#ffffff"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              >
-                <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
-                <circle cx="9" cy="7" r="4" />
-                <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
-                <path d="M16 3.13a4 4 0 0 1 0 7.75" />
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#ffffff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M23 21v-2a4 4 0 0 0-3-3.87" /><path d="M16 3.13a4 4 0 0 1 0 7.75" />
               </svg>
             </div>
             <div>
-              <p className="text-xl font-bold text-white">
-                {guestCount} Registered Guest{guestCount !== 1 ? "s" : ""}
-              </p>
-              <div className="mt-1">
-                <RegistryStatusBadge status={myRegistry.status} />
-              </div>
+              <p className="text-xl font-bold text-white">{guestCount} Registered Guest{guestCount !== 1 ? "s" : ""}</p>
+              <div className="mt-1"><RegistryStatusBadge status={myRegistry.status} /></div>
             </div>
           </div>
-
-          {/* Guest list preview */}
           {myRegistry.guests.length > 0 && (
             <div className="mt-4 border-t border-white/10 pt-4 flex flex-col gap-2">
               {myRegistry.guests.slice(0, 3).map((g, i) => (
@@ -472,20 +407,12 @@ const JudgeDashboard = () => {
                   <div className="w-7 h-7 rounded-full bg-[#c2a336]/20 border border-[#c2a336]/40 flex items-center justify-center text-xs font-bold text-[#c2a336]">
                     {guestInitial(g.name)}
                   </div>
-                  <span className="text-xs font-medium text-white/90 truncate">
-                    {g.name}
-                  </span>
+                  <span className="text-xs font-medium text-white/90 truncate">{g.name}</span>
                   <span className="text-[10px] font-bold text-[#c2a336] ml-auto uppercase tracking-tighter">
-                    {g.type === "MINOR" ? "Minor · " : ""}
-                    {genderLabel(g.gender)}
+                    {g.type === "MINOR" ? "Minor · " : ""}{genderLabel(g.gender)}
                   </span>
                 </div>
               ))}
-              {myRegistry.guests.length > 3 && (
-                <p className="text-[11px] text-white/60 font-medium italic mt-1">
-                  + {myRegistry.guests.length - 3} additional guests
-                </p>
-              )}
             </div>
           )}
         </div>
