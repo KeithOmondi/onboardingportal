@@ -74,9 +74,9 @@ const SuperAdminEvents = () => {
       {/* Stats Row */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         {[
-          { label: "Upcoming", value: events.filter(e => e.current_status === "UPCOMING").length, icon: <Calendar className="text-blue-600" />, type: 'UPCOMING' },
-          { label: "Ongoing", value: events.filter(e => e.current_status === "ONGOING").length, icon: <Clock className="text-[#C9922A]" />, type: 'ONGOING' },
-          { label: "Concluded", value: events.filter(e => e.current_status === "PAST").length, icon: <CheckCircle2 className="text-green-600" />, type: 'PAST' },
+          { label: "Upcoming", value: events.filter(e => e.current_status === "UPCOMING").length, icon: <Calendar className="text-blue-600" /> },
+          { label: "Ongoing", value: events.filter(e => e.current_status === "ONGOING").length, icon: <Clock className="text-[#C9922A]" /> },
+          { label: "Concluded", value: events.filter(e => e.current_status === "PAST").length, icon: <CheckCircle2 className="text-green-600" /> },
         ].map((stat, i) => (
           <div key={i} className="bg-white p-5 rounded-2xl border border-stone-200 flex items-center gap-4">
             <div className="p-3 bg-stone-50 rounded-xl">{stat.icon}</div>
@@ -102,7 +102,6 @@ const SuperAdminEvents = () => {
             />
           </div>
           
-          {/* Status Dropdown Filter */}
           <div className="relative">
             <button 
               onClick={() => setIsFilterDropdownOpen(!isFilterDropdownOpen)}
@@ -144,7 +143,7 @@ const SuperAdminEvents = () => {
               {filteredEvents.map((event) => (
                 <tr 
                   key={event.id} 
-                  className={`transition-all group ${event.is_past ? 'opacity-50 grayscale-[0.3] bg-stone-50/20' : 'hover:bg-stone-50/50'}`}
+                  className={`transition-all group ${event.current_status === 'PAST' ? 'opacity-50 grayscale-[0.3] bg-stone-50/20' : 'hover:bg-stone-50/50'}`}
                 >
                   <td className="px-8 py-5">
                     <div className="flex flex-col">
