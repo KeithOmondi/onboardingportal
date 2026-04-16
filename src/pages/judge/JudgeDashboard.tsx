@@ -1,10 +1,12 @@
 import { useEffect, useMemo } from "react";
 import { useAppDispatch, useAppSelector } from "../../redux/hooks";
-import { fetchEvents } from "../../redux/slices/eventsSlice";
+import { fetchEvents, selectAllEvents } from "../../redux/slices/eventsSlice";
 import { fetchNotices } from "../../redux/slices/noticeSlice";
 import { getMyGuestRegistry } from "../../redux/slices/guestSlice";
 import { useChat } from "../../hooks/useChat";
 import type { IJudicialEvent } from "../../interfaces/events.interface";
+import type { INotice } from "../../interfaces/notices.interface";
+
 // ── Helpers ───────────────────────────────────────────────────────────
 
 const formatDate = (dateStr: string | Date) =>
@@ -167,8 +169,10 @@ const genderLabel = (gender: string) => gender.charAt(0) + gender.slice(1).toLow
 const JudgeDashboard = () => {
   const dispatch = useAppDispatch();
 
+  // Selectors
   const { user } = useAppSelector((state) => state.auth);
-  const { events, loading: eventsLoading } = useAppSelector((state) => state.events);
+  const events = useAppSelector(selectAllEvents);
+  const { loading: eventsLoading } = useAppSelector((state) => state.events);
   const { notices, unreadCount: unreadNotices, loading: noticesLoading } = useAppSelector((state) => state.notices);
   const { myRegistry, loading: guestsLoading } = useAppSelector((state) => state.guests);
   const { messages, broadcastMessages, unreadCount: unreadMessages, connected, loading: chatLoading } = useChat();
@@ -179,26 +183,27 @@ const JudgeDashboard = () => {
     dispatch(getMyGuestRegistry());
   }, [dispatch]);
 
-  // ── Unified Status Logic ────────────────────────────────────────────────────
+  // ── Unified Live Status Logic ───────────────────────────────────────────────
 
-  const eventsWithStatus = useMemo(() => {
+  const eventsWithLiveStatus = useMemo(() => {
     return events.map(event => ({
       ...event,
-      status: deriveEventStatus(event)
+      liveStatus: deriveEventStatus(event)
     }));
   }, [events]);
 
-  const totalEvents = eventsWithStatus.length;
-  const upcomingCount = eventsWithStatus.filter(e => e.status === "UPCOMING").length;
-  const ongoingCount = eventsWithStatus.filter(e => e.status === "ONGOING").length;
-  const pastCount = eventsWithStatus.filter(e => e.status === "PAST").length;
+  const totalEvents = eventsWithLiveStatus.length;
+  const upcomingCount = eventsWithLiveStatus.filter(e => e.liveStatus === "UPCOMING").length;
+  const ongoingCount = eventsWithLiveStatus.filter(e => e.liveStatus === "ONGOING").length;
+  const pastCount = eventsWithLiveStatus.filter(e => e.liveStatus === "PAST").length;
 
-  const upcomingEventsPreview = [...eventsWithStatus]
-    .filter((e) => e.status !== "PAST")
+  const upcomingEventsPreview = [...eventsWithLiveStatus]
+    .filter((e) => e.liveStatus !== "PAST")
     .sort((a, b) => new Date(a.start_time).getTime() - new Date(b.start_time).getTime())
     .slice(0, 4);
 
-  const recentNotices = [...notices]
+  // FIXED: Explicitly typed to resolve unused declaration error
+  const recentNotices: INotice[] = [...notices]
     .sort((a, b) => {
       if (a.is_read !== b.is_read) return a.is_read ? 1 : -1;
       return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
@@ -239,7 +244,12 @@ const JudgeDashboard = () => {
 
       {/* Metrics */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-        <MetricCard label="Upcoming Events" value={upcomingCount} sub={ongoingCount > 0 ? `${ongoingCount} ongoing now` : "Scheduled Sessions"} valueColor="#c2a336" />
+        <MetricCard 
+            label="Upcoming Events" 
+            value={upcomingCount} 
+            sub={ongoingCount > 0 ? `${ongoingCount} ongoing now` : "Scheduled Sessions"} 
+            valueColor="#c2a336" 
+        />
         <MetricCard label="Unread Notices" value={unreadNotices} sub={`of ${notices.length} total updates`} valueColor={unreadNotices > 0 ? "#7a1a1a" : "#1a3a32"} />
         <MetricCard label="Unread Messages" value={unreadMessages} sub={`of ${totalMessages} total message${totalMessages !== 1 ? "s" : ""}`} valueColor={unreadMessages > 0 ? "#7a1a1a" : "#1a3a32"} />
         <MetricCard label="Guest Registry" value={guestCount} sub={myRegistry.status} valueColor="#25443c" />
@@ -269,7 +279,7 @@ const JudgeDashboard = () => {
                       </p>
                     )}
                   </div>
-                  <EventStatusBadge status={event.status} />
+                  <EventStatusBadge status={event.liveStatus} />
                 </div>
               ))}
             </div>
