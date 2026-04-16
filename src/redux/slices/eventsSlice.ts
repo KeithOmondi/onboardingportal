@@ -33,7 +33,7 @@ const initialState: EventsState = {
 };
 
 /**
- * Fetch events — filtered by status on the server
+ * Fetch events — Uses server-side status filtering based on Nairobi Timezone
  */
 export const fetchEvents = createAsyncThunk(
   "events/fetchEvents",
@@ -43,6 +43,7 @@ export const fetchEvents = createAsyncThunk(
         params: { status },
         withCredentials: true,
       });
+      // The backend now provides 'current_status' based on Africa/Nairobi offset
       return response.data.data as IJudicialEvent[];
     } catch (err) {
       const error = err as AxiosError<BackendError>;
@@ -54,13 +55,20 @@ export const fetchEvents = createAsyncThunk(
 );
 
 /**
- * Create a new event — sends start_time and end_time
+ * Create a new event — Normalizes dates to ISO strings before sending
  */
 export const createEvent = createAsyncThunk(
   "events/createEvent",
   async (eventData: ICreateEventPayload, { rejectWithValue }) => {
     try {
-      const response = await api.post(`/events/create`, eventData, {
+      // Ensure dates are sent in a standardized format
+      const payload = {
+        ...eventData,
+        start_time: new Date(eventData.start_time).toISOString(),
+        end_time: new Date(eventData.end_time).toISOString(),
+      };
+
+      const response = await api.post(`/events/create`, payload, {
         withCredentials: true,
       });
       return response.data.data as IJudicialEvent;
@@ -74,14 +82,22 @@ export const createEvent = createAsyncThunk(
 );
 
 /**
- * Update an existing event — sends only changed fields + id
+ * Update an existing event
  */
 export const updateEvent = createAsyncThunk(
   "events/updateEvent",
   async (eventData: IUpdateEventPayload, { rejectWithValue }) => {
     try {
       const { id, ...fields } = eventData;
-      const response = await api.patch(`/events/update/${id}`, fields, {
+      
+      // Normalize dates if they are being updated
+      const payload = {
+        ...fields,
+        ...(fields.start_time && { start_time: new Date(fields.start_time).toISOString() }),
+        ...(fields.end_time && { end_time: new Date(fields.end_time).toISOString() }),
+      };
+
+      const response = await api.patch(`/events/update/${id}`, payload, {
         withCredentials: true,
       });
       return response.data.data as IJudicialEvent;
@@ -95,7 +111,7 @@ export const updateEvent = createAsyncThunk(
 );
 
 /**
- * Delete an event by ID
+ * Delete an event
  */
 export const deleteEvent = createAsyncThunk(
   "events/deleteEvent",
@@ -127,79 +143,47 @@ const eventsSlice = createSlice({
   },
   extraReducers: (builder) => {
     builder
-      // ── Fetch ────────────────────────────────────────────────
+      // Fetch
       .addCase(fetchEvents.pending, (state) => {
         state.loading = true;
         state.error = null;
       })
-      .addCase(
-        fetchEvents.fulfilled,
-        (state, action: PayloadAction<IJudicialEvent[]>) => {
-          state.loading = false;
-          state.events = action.payload;
-        },
-      )
+      .addCase(fetchEvents.fulfilled, (state, action) => {
+        state.loading = false;
+        state.events = action.payload;
+      })
       .addCase(fetchEvents.rejected, (state, action) => {
         state.loading = false;
         state.error = action.payload as string;
       })
 
-      // ── Create ───────────────────────────────────────────────
-      .addCase(createEvent.pending, (state) => {
-        state.error = null;
-      })
-      .addCase(
-        createEvent.fulfilled,
-        (state, action: PayloadAction<IJudicialEvent>) => {
-          state.events.unshift(action.payload);
-        },
-      )
-      .addCase(createEvent.rejected, (state, action) => {
-        state.error = action.payload as string;
+      // Create
+      .addCase(createEvent.fulfilled, (state, action) => {
+        // If we are currently filtered to 'PAST', the new 'UPCOMING' event shouldn't appear
+        // but unshift is safe for 'ALL' or 'UPCOMING' filters.
+        state.events.unshift(action.payload);
       })
 
-      // ── Update ───────────────────────────────────────────────
-      .addCase(updateEvent.pending, (state) => {
-        state.error = null;
-      })
-      .addCase(
-        updateEvent.fulfilled,
-        (state, action: PayloadAction<IJudicialEvent>) => {
-          const index = state.events.findIndex(
-            (e) => e.id === action.payload.id,
-          );
-          if (index !== -1) {
-            state.events[index] = action.payload;
-          }
-        },
-      )
-      .addCase(updateEvent.rejected, (state, action) => {
-        state.error = action.payload as string;
+      // Update
+      .addCase(updateEvent.fulfilled, (state, action) => {
+        const index = state.events.findIndex((e) => e.id === action.payload.id);
+        if (index !== -1) {
+          // Replace with the updated object (including the new current_status from DB)
+          state.events[index] = action.payload;
+        }
       })
 
-      // ── Delete ───────────────────────────────────────────────
-      .addCase(deleteEvent.pending, (state) => {
-        state.error = null;
-      })
-      .addCase(
-        deleteEvent.fulfilled,
-        (state, action: PayloadAction<number>) => {
-          state.events = state.events.filter((e) => e.id !== action.payload);
-        },
-      )
-      .addCase(deleteEvent.rejected, (state, action) => {
-        state.error = action.payload as string;
+      // Delete
+      .addCase(deleteEvent.fulfilled, (state, action) => {
+        state.events = state.events.filter((e) => e.id !== action.payload);
       });
   },
 });
 
 export const { setFilter, clearEventError } = eventsSlice.actions;
 
-// Selectors
 export const selectAllEvents = (state: RootState) => state.events.events;
 export const selectEventsLoading = (state: RootState) => state.events.loading;
-export const selectEventsError = (state: RootState) => state.events.error;
-export const selectCurrentFilter = (state: RootState) =>
-  state.events.currentFilter;
+export const selectCurrentFilter = (state: RootState) => state.events.currentFilter;
 
 export default eventsSlice.reducer;
