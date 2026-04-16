@@ -24,11 +24,23 @@ const getStatusStyles = (status: EventStatus) => {
   }
 };
 
-const formatTime = (date: Date | string) =>
-  new Date(date).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+/**
+ * FIX: Prevents timezone shifting. 
+ * If your DB stores 10:00 AM, this ensures it shows 10:00 AM 
+ * regardless of whether the browser is in UTC or EAT.
+ */
+const formatZonedTime = (dateSource: Date | string) => {
+  const date = new Date(dateSource);
+  return date.toLocaleTimeString("en-GB", {
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: true,
+    timeZone: "UTC", // Forces the 'raw' time from the ISO string
+  }).toUpperCase();
+};
 
 const formatDate = (date: Date | string) =>
-  new Date(date).toLocaleDateString("en-KE", { month: "long", day: "numeric" });
+  new Date(date).toLocaleDateString("en-KE", { month: "long", day: "numeric", timeZone: "UTC" });
 
 const JudgeEvents = () => {
   const dispatch = useAppDispatch();
@@ -50,7 +62,6 @@ const JudgeEvents = () => {
     dispatch(setFilter(statusMap[tab]));
   };
 
-  // Prefer the first ongoing event, then upcoming, then fall back to whatever is first
   const nextSession =
     events.find((e) => e.current_status === "UPCOMING" || e.current_status === "ONGOING")
     ?? (events.length > 0 ? events[0] : null);
@@ -84,7 +95,6 @@ const JudgeEvents = () => {
       <div className="grid grid-cols-1 lg:grid-cols-4 gap-8">
         {/* Left: Summary + Next Session */}
         <div className="space-y-4">
-          {/* Summary card */}
           <div className="bg-white border border-stone-200 p-5 rounded-2xl shadow-sm">
             <h3 className="text-xs font-black uppercase tracking-widest text-stone-400 mb-4 flex items-center gap-2">
               <Filter size={14} /> View Summary
@@ -101,7 +111,6 @@ const JudgeEvents = () => {
             </div>
           </div>
 
-          {/* Next session card */}
           <div className="bg-[#1a3a2a] text-white p-6 rounded-2xl shadow-lg relative overflow-hidden">
             <div className="relative z-10">
               <CalendarIcon size={24} className="text-[#C9922A] mb-4" />
@@ -112,10 +121,10 @@ const JudgeEvents = () => {
                     {formatDate(nextSession.start_time)}
                   </h4>
                   <p className="text-xs mt-2 font-black uppercase tracking-widest text-[#C9922A]">
-                    {formatTime(nextSession.start_time)}
+                    {formatZonedTime(nextSession.start_time)}
                     {nextSession.end_time && (
                       <span className="font-normal opacity-75">
-                        {" – "}{formatTime(nextSession.end_time)}
+                        {" – "}{formatZonedTime(nextSession.end_time)}
                       </span>
                     )}
                   </p>
@@ -158,31 +167,28 @@ const JudgeEvents = () => {
           ) : (
             events.map((event) => {
               const eventDate   = new Date(event.start_time);
-              // Use the DB-computed status per event; fall back to the active filter
               const cardStatus  = event.current_status ?? currentFilter;
               const statusStyle = getStatusStyles(cardStatus);
 
               return (
                 <div key={event.id} className="group relative flex gap-6">
-                  {/* Date vertical badge */}
+                  {/* Vertical Date - Fixed for Timezone */}
                   <div className="hidden sm:flex flex-col items-center min-w-[60px] pt-2">
                     <span className="text-xs font-black text-stone-400 uppercase">
-                      {eventDate.toLocaleString("default", { month: "short" })}
+                      {eventDate.toLocaleString("default", { month: "short", timeZone: "UTC" })}
                     </span>
                     <span className="text-2xl font-bold text-stone-800">
-                      {eventDate.getDate()}
+                      {eventDate.getUTCDate()}
                     </span>
                     <div className="w-px h-full bg-stone-100 mt-2 group-last:bg-transparent" />
                   </div>
 
-                  {/* Event Card */}
                   <div
                     className={`flex-1 bg-white border rounded-2xl overflow-hidden hover:shadow-md transition-all duration-300 ${
                       event.is_past ? "border-stone-100 opacity-75" : "border-stone-200"
                     }`}
                   >
                     <div className="p-6">
-                      {/* Status badge + Location */}
                       <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
                         <div
                           className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-widest ${statusStyle.bg} ${statusStyle.color}`}
@@ -196,7 +202,6 @@ const JudgeEvents = () => {
                         </div>
                       </div>
 
-                      {/* Title + Description */}
                       <h3 className="text-xl font-bold font-serif text-[#1a3a2a] mb-2 group-hover:text-[#C9922A] transition-colors">
                         {event.title}
                       </h3>
@@ -204,23 +209,20 @@ const JudgeEvents = () => {
                         {event.description}
                       </p>
 
-                      {/* Footer */}
                       <div className="flex flex-wrap items-center justify-between gap-4 pt-4 border-t border-stone-50">
                         <div className="flex items-center gap-4 text-stone-500">
-                          {/* Time range */}
                           <div className="flex items-center gap-1.5">
                             <Clock size={14} className="text-[#C9922A]" />
                             <span className="text-xs font-bold">
-                              {formatTime(event.start_time)}
+                              {formatZonedTime(event.start_time)}
                               {event.end_time && (
                                 <span className="font-normal text-stone-400">
-                                  {" – "}{formatTime(event.end_time)}
+                                  {" – "}{formatZonedTime(event.end_time)}
                                 </span>
                               )}
                             </span>
                           </div>
 
-                          {/* Organizer */}
                           <div className="flex items-center gap-1.5">
                             <Users size={14} />
                             <span className="text-xs font-medium">{event.organizer}</span>
