@@ -5,7 +5,6 @@ import { fetchNotices } from "../../redux/slices/noticeSlice";
 import { getMyGuestRegistry } from "../../redux/slices/guestSlice";
 import { useChat } from "../../hooks/useChat";
 import type { IJudicialEvent } from "../../interfaces/events.interface";
-
 // ── Helpers ───────────────────────────────────────────────────────────
 
 const formatDate = (dateStr: string | Date) =>
