@@ -1,20 +1,19 @@
-import { useEffect } from "react";
+import { useEffect, useMemo } from "react";
 import { useAppDispatch, useAppSelector } from "../../redux/hooks";
 import { fetchEvents } from "../../redux/slices/eventsSlice";
 import { fetchNotices } from "../../redux/slices/noticeSlice";
 import { getMyGuestRegistry } from "../../redux/slices/guestSlice";
 import { useChat } from "../../hooks/useChat";
 import type { IJudicialEvent } from "../../interfaces/events.interface";
-import type { INotice } from "../../interfaces/notices.interface";
 
-// ── Helpers (Locked to UTC to prevent 3-hour shift) ───────────────────────────
+// ── Helpers ───────────────────────────────────────────────────────────
 
 const formatDate = (dateStr: string | Date) =>
   new Date(dateStr).toLocaleDateString("en-KE", {
     day: "2-digit",
     month: "short",
     year: "numeric",
-    timeZone: "UTC", // Fix: Prevents local timezone offset
+    timeZone: "UTC",
   });
 
 const formatTime = (dateStr: string | Date) =>
@@ -22,7 +21,7 @@ const formatTime = (dateStr: string | Date) =>
     hour: "2-digit",
     minute: "2-digit",
     hour12: true,
-    timeZone: "UTC", // Fix: Prevents local timezone offset
+    timeZone: "UTC",
   }).toUpperCase();
 
 const timeAgo = (dateStr: string | Date) => {
@@ -33,17 +32,13 @@ const timeAgo = (dateStr: string | Date) => {
   return `${days}d ago`;
 };
 
-/**
- * Derives status based on current time. 
- * Note: If your server is in UTC, ensure 'now' is compared correctly.
- */
 const deriveEventStatus = (
   event: IJudicialEvent
 ): "UPCOMING" | "ONGOING" | "PAST" => {
   const now = new Date().getTime();
   const start = new Date(event.start_time).getTime();
   const end = new Date(event.end_time).getTime();
-  
+
   if (now < start) return "UPCOMING";
   if (now >= start && now <= end) return "ONGOING";
   return "PAST";
@@ -166,9 +161,7 @@ const ProgressRow = ({
 );
 
 const guestInitial = (name: string) => name.trim().charAt(0).toUpperCase();
-
-const genderLabel = (gender: string) =>
-  gender.charAt(0) + gender.slice(1).toLowerCase();
+const genderLabel = (gender: string) => gender.charAt(0) + gender.slice(1).toLowerCase();
 
 // ── Main Component ────────────────────────────────────────────────────────────
 
@@ -176,25 +169,10 @@ const JudgeDashboard = () => {
   const dispatch = useAppDispatch();
 
   const { user } = useAppSelector((state) => state.auth);
-  const { events, loading: eventsLoading } = useAppSelector(
-    (state) => state.events
-  );
-  const {
-    notices,
-    unreadCount: unreadNotices,
-    loading: noticesLoading,
-  } = useAppSelector((state) => state.notices);
-  const { myRegistry, loading: guestsLoading } = useAppSelector(
-    (state) => state.guests
-  );
-
-  const {
-    messages,
-    broadcastMessages,
-    unreadCount: unreadMessages,
-    connected,
-    loading: chatLoading,
-  } = useChat();
+  const { events, loading: eventsLoading } = useAppSelector((state) => state.events);
+  const { notices, unreadCount: unreadNotices, loading: noticesLoading } = useAppSelector((state) => state.notices);
+  const { myRegistry, loading: guestsLoading } = useAppSelector((state) => state.guests);
+  const { messages, broadcastMessages, unreadCount: unreadMessages, connected, loading: chatLoading } = useChat();
 
   useEffect(() => {
     dispatch(fetchEvents("ALL"));
@@ -202,31 +180,29 @@ const JudgeDashboard = () => {
     dispatch(getMyGuestRegistry());
   }, [dispatch]);
 
-  // ── Derived values (Status logic updated) ──────────────────────────────────
+  // ── Unified Status Logic ────────────────────────────────────────────────────
 
-  const totalEvents = events.length;
-  const upcomingCount = events.filter(
-    (e) => deriveEventStatus(e) === "UPCOMING"
-  ).length;
-  const ongoingCount = events.filter(
-    (e) => deriveEventStatus(e) === "ONGOING"
-  ).length;
-  const pastCount = events.filter((e) => deriveEventStatus(e) === "PAST").length;
+  const eventsWithStatus = useMemo(() => {
+    return events.map(event => ({
+      ...event,
+      status: deriveEventStatus(event)
+    }));
+  }, [events]);
 
-  const upcomingEvents: IJudicialEvent[] = [...events]
-    .filter((e) => deriveEventStatus(e) !== "PAST")
-    .sort(
-      (a, b) =>
-        new Date(a.start_time).getTime() - new Date(b.start_time).getTime()
-    )
+  const totalEvents = eventsWithStatus.length;
+  const upcomingCount = eventsWithStatus.filter(e => e.status === "UPCOMING").length;
+  const ongoingCount = eventsWithStatus.filter(e => e.status === "ONGOING").length;
+  const pastCount = eventsWithStatus.filter(e => e.status === "PAST").length;
+
+  const upcomingEventsPreview = [...eventsWithStatus]
+    .filter((e) => e.status !== "PAST")
+    .sort((a, b) => new Date(a.start_time).getTime() - new Date(b.start_time).getTime())
     .slice(0, 4);
 
-  const recentNotices: INotice[] = [...notices]
+  const recentNotices = [...notices]
     .sort((a, b) => {
       if (a.is_read !== b.is_read) return a.is_read ? 1 : -1;
-      return (
-        new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
-      );
+      return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
     })
     .slice(0, 5);
 
@@ -240,24 +216,16 @@ const JudgeDashboard = () => {
 
   return (
     <div className="p-4 md:p-6 max-w-6xl mx-auto bg-[#f9faf9]">
-
       {/* Header */}
       <div className="mb-6 flex justify-between items-start">
         <div>
-          <p className="text-sm font-medium text-[#c2a336]">
-            {greeting}, {displayName}
-          </p>
+          <p className="text-sm font-medium text-[#c2a336]">{greeting}, {displayName}</p>
           <h1 className="text-3xl font-bold text-[#1a3a32] mt-0.5 border-b-2 border-[#c2a336] inline-block pr-8">
             Dashboard
           </h1>
         </div>
-
         <div className="flex items-center gap-2 px-3 py-1 bg-white border border-[#e2e8e4] rounded-full shadow-sm">
-          <div
-            className={`w-2 h-2 rounded-full ${
-              connected ? "bg-emerald-500 animate-pulse" : "bg-red-400"
-            }`}
-          />
+          <div className={`w-2 h-2 rounded-full ${connected ? "bg-emerald-500 animate-pulse" : "bg-red-400"}`} />
           <span className="text-[10px] font-bold text-[#1a3a32] uppercase tracking-tighter">
             {connected ? "Securely Connected" : "Offline"}
           </span>
@@ -272,62 +240,37 @@ const JudgeDashboard = () => {
 
       {/* Metrics */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-        <MetricCard
-          label="Upcoming Events"
-          value={upcomingCount}
-          sub={ongoingCount > 0 ? `${ongoingCount} ongoing now` : "Scheduled Sessions"}
-          valueColor="#c2a336"
-        />
-        <MetricCard
-          label="Unread Notices"
-          value={unreadNotices}
-          sub={`of ${notices.length} total updates`}
-          valueColor={unreadNotices > 0 ? "#7a1a1a" : "#1a3a32"}
-        />
-        <MetricCard
-          label="Unread Messages"
-          value={unreadMessages}
-          sub={`of ${totalMessages} total message${totalMessages !== 1 ? "s" : ""}`}
-          valueColor={unreadMessages > 0 ? "#7a1a1a" : "#1a3a32"}
-        />
-        <MetricCard
-          label="Guest Registry"
-          value={guestCount}
-          sub={myRegistry.status}
-          valueColor="#25443c"
-        />
+        <MetricCard label="Upcoming Events" value={upcomingCount} sub={ongoingCount > 0 ? `${ongoingCount} ongoing now` : "Scheduled Sessions"} valueColor="#c2a336" />
+        <MetricCard label="Unread Notices" value={unreadNotices} sub={`of ${notices.length} total updates`} valueColor={unreadNotices > 0 ? "#7a1a1a" : "#1a3a32"} />
+        <MetricCard label="Unread Messages" value={unreadMessages} sub={`of ${totalMessages} total message${totalMessages !== 1 ? "s" : ""}`} valueColor={unreadMessages > 0 ? "#7a1a1a" : "#1a3a32"} />
+        <MetricCard label="Guest Registry" value={guestCount} sub={myRegistry.status} valueColor="#25443c" />
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
-        {/* Upcoming Events - Fixed Times */}
+        {/* Upcoming Events List */}
         <div className="bg-white border border-[#e2e8e4] rounded-xl p-5 shadow-sm">
           <p className="text-[12px] font-bold text-[#1a3a32] uppercase tracking-widest mb-4 flex items-center gap-2">
             <span className="w-2 h-4 bg-[#c2a336] rounded-sm" />
             Upcoming Events
           </p>
-          {upcomingEvents.length === 0 ? (
-            <p className="text-xs text-[#5c7a6b] py-4 text-center italic">
-              No upcoming judicial events scheduled.
-            </p>
+          {upcomingEventsPreview.length === 0 ? (
+            <p className="text-xs text-[#5c7a6b] py-4 text-center italic">No upcoming judicial events scheduled.</p>
           ) : (
             <div className="flex flex-col divide-y divide-[#f2f4f2]">
-              {upcomingEvents.map((event) => (
+              {upcomingEventsPreview.map((event) => (
                 <div key={event.id} className="flex items-center justify-between py-3.5 gap-3">
                   <div className="min-w-0">
-                    <p className="text-sm font-bold text-[#1a3a32] truncate">
-                      {event.title}
-                    </p>
+                    <p className="text-sm font-bold text-[#1a3a32] truncate">{event.title}</p>
                     <p className="text-[11px] text-[#5c7a6b] mt-0.5 font-medium">
                       {formatDate(event.start_time)} · {formatTime(event.start_time)}
                     </p>
                     {event.location && (
                       <p className="text-[10px] text-[#c2a336] font-semibold mt-0.5 truncate italic">
-                        {event.is_virtual ? "Virtual Session · " : ""}
-                        {event.location}
+                        {event.is_virtual ? "Virtual Session · " : ""}{event.location}
                       </p>
                     )}
                   </div>
-                  <EventStatusBadge status={deriveEventStatus(event)} />
+                  <EventStatusBadge status={event.status} />
                 </div>
               ))}
             </div>
@@ -341,22 +284,15 @@ const JudgeDashboard = () => {
             Recent Notices
           </p>
           {recentNotices.length === 0 ? (
-            <p className="text-xs text-[#5c7a6b] py-4 text-center italic">
-              No recent administrative notices.
-            </p>
+            <p className="text-xs text-[#5c7a6b] py-4 text-center italic">No recent administrative notices.</p>
           ) : (
             <div className="flex flex-col divide-y divide-[#f2f4f2]">
               {recentNotices.map((notice) => (
                 <div key={notice.id} className="flex items-start gap-3 py-3.5">
-                  <span
-                    className="w-2.5 h-2.5 rounded-full flex-shrink-0 mt-1 shadow-sm"
-                    style={{ background: notice.is_read ? "#d1d1d1" : "#c2a336" }}
-                  />
+                  <span className="w-2.5 h-2.5 rounded-full flex-shrink-0 mt-1 shadow-sm" style={{ background: notice.is_read ? "#d1d1d1" : "#c2a336" }} />
                   <div className="min-w-0 flex-1">
                     <div className="flex items-start justify-between gap-2">
-                      <p className="text-sm text-[#1a3a32] leading-relaxed" style={{ fontWeight: notice.is_read ? 500 : 700 }}>
-                        {notice.title}
-                      </p>
+                      <p className="text-sm text-[#1a3a32] leading-relaxed" style={{ fontWeight: notice.is_read ? 500 : 700 }}>{notice.title}</p>
                       <NoticeCategoryBadge category={notice.category} />
                     </div>
                     <p className="text-[11px] text-[#5c7a6b] mt-0.5 font-medium">
@@ -372,7 +308,7 @@ const JudgeDashboard = () => {
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        {/* Statistics */}
+        {/* Statistics Bar Charts */}
         <div className="bg-white border border-[#e2e8e4] rounded-xl p-5 shadow-sm">
           <p className="text-[12px] font-bold text-[#1a3a32] uppercase tracking-widest mb-5">
             Event Statistics
@@ -384,7 +320,7 @@ const JudgeDashboard = () => {
           </div>
         </div>
 
-        {/* Registry */}
+        {/* Registry Summary */}
         <div className="bg-[#1a3a32] border border-[#1a3a32] rounded-xl p-5 shadow-lg text-white">
           <p className="text-[12px] font-bold text-[#c2a336] uppercase tracking-widest mb-4">
             Guest Registry
