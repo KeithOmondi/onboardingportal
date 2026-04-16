@@ -1,8 +1,8 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { X, Loader2 } from "lucide-react";
 import { useAppDispatch } from "../../redux/hooks";
 import { createEvent, updateEvent } from "../../redux/slices/eventsSlice";
-import type { IJudicialEvent } from "../../interfaces/events.interface";
+import type { IJudicialEvent, ICreateEventPayload, IUpdateEventPayload } from "../../interfaces/events.interface";
 
 interface EventModalProps {
   isOpen: boolean;
@@ -10,31 +10,50 @@ interface EventModalProps {
   selectedEvent: IJudicialEvent | null;
 }
 
+const initialFormState: ICreateEventPayload = {
+  title: "",
+  description: "",
+  location: "",
+  organizer: "",
+  start_time: "",
+  end_time: "",
+  is_virtual: false,
+};
+
 const EventModal = ({ isOpen, onClose, selectedEvent }: EventModalProps) => {
   const dispatch = useAppDispatch();
   const [loading, setLoading] = useState(false);
+  const [formData, setFormData] = useState<ICreateEventPayload>(initialFormState);
 
-  // Direct initialization: State is set once when the component mounts.
-  // The 'key' prop on the parent will handle resetting this state.
-  const [formData, setFormData] = useState<Partial<IJudicialEvent>>(
-    selectedEvent || {
-      title: "",
-      description: "",
-      location: "",
-      organizer: "",
-      start_time: "",
-      end_time: "",
-      is_virtual: false,
+  // Sync state whenever selectedEvent changes or modal opens
+  useEffect(() => {
+    if (selectedEvent) {
+      setFormData({
+        title: selectedEvent.title,
+        description: selectedEvent.description,
+        location: selectedEvent.location,
+        organizer: selectedEvent.organizer,
+        // Format dates for datetime-local input (YYYY-MM-DDTHH:mm)
+        start_time: selectedEvent.start_time ? new Date(selectedEvent.start_time).toISOString().slice(0, 16) : "",
+        end_time: selectedEvent.end_time ? new Date(selectedEvent.end_time).toISOString().slice(0, 16) : "",
+        is_virtual: selectedEvent.is_virtual,
+      });
+    } else {
+      setFormData(initialFormState);
     }
-  );
+  }, [selectedEvent, isOpen]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
-    
+
     try {
       if (selectedEvent?.id) {
-        await dispatch(updateEvent(formData)).unwrap();
+        const updatePayload: IUpdateEventPayload = {
+          ...formData,
+          id: selectedEvent.id,
+        };
+        await dispatch(updateEvent(updatePayload)).unwrap();
       } else {
         await dispatch(createEvent(formData)).unwrap();
       }
@@ -56,9 +75,9 @@ const EventModal = ({ isOpen, onClose, selectedEvent }: EventModalProps) => {
           <h2 className="text-xl font-bold font-serif text-[#1a3a2a]">
             {selectedEvent ? "Edit Judicial Event" : "Create New Event"}
           </h2>
-          <button 
+          <button
             type="button"
-            onClick={onClose} 
+            onClick={onClose}
             className="p-2 hover:bg-stone-200 rounded-full transition-colors"
           >
             <X size={20} className="text-stone-500" />
@@ -70,81 +89,82 @@ const EventModal = ({ isOpen, onClose, selectedEvent }: EventModalProps) => {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="col-span-2">
               <label className="block text-xs font-black uppercase text-stone-400 mb-1">Event Title</label>
-              <input 
+              <input
                 required
-                type="text" 
+                type="text"
                 className="w-full p-3 rounded-xl border border-stone-200 focus:ring-2 focus:ring-[#1a3a2a]/10 outline-none"
                 placeholder="e.g., Supreme Court Bench Briefing"
                 value={formData.title}
-                onChange={(e) => setFormData({...formData, title: e.target.value})}
+                onChange={(e) => setFormData({ ...formData, title: e.target.value })}
               />
             </div>
 
             <div>
               <label className="block text-xs font-black uppercase text-stone-400 mb-1">Organizer</label>
-              <input 
+              <input
                 required
-                type="text" 
+                type="text"
                 className="w-full p-3 rounded-xl border border-stone-200 focus:ring-2 focus:ring-[#1a3a2a]/10 outline-none"
                 placeholder="Office of the Registrar"
                 value={formData.organizer}
-                onChange={(e) => setFormData({...formData, organizer: e.target.value})}
+                onChange={(e) => setFormData({ ...formData, organizer: e.target.value })}
               />
             </div>
 
             <div>
               <label className="block text-xs font-black uppercase text-stone-400 mb-1">Location</label>
-              <input 
+              <input
                 required
-                type="text" 
+                type="text"
                 className="w-full p-3 rounded-xl border border-stone-200 focus:ring-2 focus:ring-[#1a3a2a]/10 outline-none"
                 placeholder={formData.is_virtual ? "Link (Teams/Zoom)" : "Courtroom/Chamber"}
                 value={formData.location}
-                onChange={(e) => setFormData({...formData, location: e.target.value})}
+                onChange={(e) => setFormData({ ...formData, location: e.target.value })}
               />
             </div>
 
             <div>
               <label className="block text-xs font-black uppercase text-stone-400 mb-1">Start Date & Time</label>
-              <input 
+              <input
                 required
-                type="datetime-local" 
+                type="datetime-local"
                 className="w-full p-3 rounded-xl border border-stone-200 focus:ring-2 focus:ring-[#1a3a2a]/10 outline-none"
-                value={formData.start_time ? formData.start_time.toString().slice(0, 16) : ""}
-                onChange={(e) => setFormData({...formData, start_time: e.target.value})}
+                value={formData.start_time as string}
+                onChange={(e) => setFormData({ ...formData, start_time: e.target.value })}
               />
             </div>
 
             <div>
               <label className="block text-xs font-black uppercase text-stone-400 mb-1">End Date & Time</label>
-              <input 
+              <input
                 required
-                type="datetime-local" 
+                type="datetime-local"
                 className="w-full p-3 rounded-xl border border-stone-200 focus:ring-2 focus:ring-[#1a3a2a]/10 outline-none"
-                value={formData.end_time ? formData.end_time.toString().slice(0, 16) : ""}
-                onChange={(e) => setFormData({...formData, end_time: e.target.value})}
+                value={formData.end_time as string}
+                onChange={(e) => setFormData({ ...formData, end_time: e.target.value })}
               />
             </div>
           </div>
 
           <div>
             <label className="block text-xs font-black uppercase text-stone-400 mb-1">Description</label>
-            <textarea 
+            <textarea
               rows={3}
+              required
               className="w-full p-3 rounded-xl border border-stone-200 focus:ring-2 focus:ring-[#1a3a2a]/10 outline-none resize-none"
               placeholder="Provide details about the judicial session..."
               value={formData.description}
-              onChange={(e) => setFormData({...formData, description: e.target.value})}
+              onChange={(e) => setFormData({ ...formData, description: e.target.value })}
             />
           </div>
 
           <div className="flex items-center gap-3 p-3 bg-stone-50 rounded-xl border border-stone-100">
-            <input 
-              type="checkbox" 
+            <input
+              type="checkbox"
               id="is_virtual"
               className="w-5 h-5 accent-[#1a3a2a]"
               checked={formData.is_virtual}
-              onChange={(e) => setFormData({...formData, is_virtual: e.target.checked})}
+              onChange={(e) => setFormData({ ...formData, is_virtual: e.target.checked })}
             />
             <label htmlFor="is_virtual" className="text-sm font-bold text-stone-600 cursor-pointer">
               This is a Virtual Session (Microsoft Teams / Zoom)
@@ -152,19 +172,25 @@ const EventModal = ({ isOpen, onClose, selectedEvent }: EventModalProps) => {
           </div>
 
           <div className="flex justify-end gap-3 pt-4">
-            <button 
+            <button
               type="button"
               onClick={onClose}
               className="px-6 py-2.5 rounded-xl font-bold text-stone-500 hover:bg-stone-100 transition-all"
             >
               Cancel
             </button>
-            <button 
+            <button
               type="submit"
               disabled={loading}
               className="flex items-center justify-center gap-2 bg-[#1a3a2a] text-[#C9922A] px-8 py-2.5 rounded-xl font-bold hover:bg-[#244d38] transition-all shadow-lg min-w-[140px] disabled:opacity-70"
             >
-              {loading ? <Loader2 className="animate-spin" size={20} /> : "Save Event"}
+              {loading ? (
+                <Loader2 className="animate-spin" size={20} />
+              ) : selectedEvent ? (
+                "Update Event"
+              ) : (
+                "Save Event"
+              )}
             </button>
           </div>
         </form>
