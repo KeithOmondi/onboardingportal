@@ -17,34 +17,39 @@ api.interceptors.request.use((config) => {
   return config;
 });
 
+// src/api/api.ts logic update
 api.interceptors.response.use(
   (response) => response,
   async (error) => {
     const originalRequest = error.config;
 
-    if (originalRequest.url?.includes("/auth/refresh")) {
-      return Promise.reject(error);
-    }
-
+    // If it's a 401 and we haven't retried yet
     if (error.response?.status === 401 && !originalRequest._retry) {
       originalRequest._retry = true;
 
       try {
-        const { data } = await axios.get("/api/v1/auth/refresh", { // ← proxy path
+        // Use standard axios for refresh to avoid interceptor loops
+        const { data } = await axios.get(`${import.meta.env.VITE_API_URL}/auth/refresh`, {
           withCredentials: true,
         });
 
-        localStorage.setItem("accessToken", data.accessToken);
-        originalRequest.headers.Authorization = `Bearer ${data.accessToken}`;
+        const newAccessToken = data.accessToken;
+        localStorage.setItem("accessToken", newAccessToken);
 
+        // Update the failed request with the NEW token
+        originalRequest.headers.Authorization = `Bearer ${newAccessToken}`;
+        
+        // Retry the original request
         return api(originalRequest);
       } catch (refreshError) {
         localStorage.removeItem("accessToken");
-        window.location.href = "/login";
+        // Only redirect if we aren't already on login
+        if (!window.location.pathname.includes('/login')) {
+            window.location.href = "/login";
+        }
         return Promise.reject(refreshError);
       }
     }
-
     return Promise.reject(error);
   }
 );

@@ -15,6 +15,7 @@ const JudgeSidebar = ({ isOpen, onClose }: JudgeSidebarProps) => {
     { icon: <Book size={20} />, label: "Oath Information", path: "/judge/oath" },
     { icon: <User size={20} />, label: "Guest Registration", path: "/judge/guest-registration" },
     { icon: <Award size={20} />, label: "Notice Board", path: "/judge/notices" },
+    { icon: <Award size={20} />, label: "Documents", path: "/judge/orhc-documents" },
     { icon: <Award size={20} />, label: "Events", path: "/judge/events" },
     { icon: <Camera size={20} />, label: "Gallery", path: "/judge/gallery" },
   ];

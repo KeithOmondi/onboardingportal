@@ -4,7 +4,8 @@ import {
   Pen,
   ShowerHeadIcon,
   Camera,
-  MessageCircle
+  MessageCircle,
+  PaperclipIcon
 } from 'lucide-react';
 import { useAppDispatch } from '../../redux/hooks';
 import { logout } from '../../redux/slices/authSlice';
@@ -24,6 +25,7 @@ const AdminSidebar = ({ isOpen, onClose }: AdminSidebarProps) => {
     { title: 'Oath Details',           icon: <Gavel size={20} />,           path: '/superadmin/oath' },
     { title: 'Guest List',             icon: <Group size={20} />,           path: '/superadmin/guest-list' },
     { title: 'Notice Board',             icon: <Pen size={20} />,           path: '/superadmin/notice-board' },
+    { title: 'Documents',             icon: <PaperclipIcon size={20} />,           path: '/superadmin/orhc-documents' },
     { title: 'Events Board',             icon: <ShowerHeadIcon size={20} />,           path: '/superadmin/events-board' },
     { title: 'Gallery',             icon: <Camera size={20} />,           path: '/superadmin/admin-gallery' },
     { title: 'All Judges',             icon: <Users size={20} />,           path: '/superadmin/users' },

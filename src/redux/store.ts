@@ -8,6 +8,7 @@ import noticesReducer from "./slices/noticeSlice"
 import eventsReducer from "./slices/eventsSlice"
 import galleryReducer from "./slices/gallerySlice"
 import chatReducer from "./slices/chatSlice"
+import docuemntsReducer from "./slices/documentsSlice"
 
 export const store = configureStore({
   reducer: {
@@ -19,7 +20,8 @@ export const store = configureStore({
     notices: noticesReducer,
     events: eventsReducer,
     gallery: galleryReducer,
-    chat: chatReducer
+    chat: chatReducer,
+    documents: docuemntsReducer
   },
   middleware: (getDefaultMiddleware) =>
     getDefaultMiddleware({

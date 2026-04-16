@@ -40,6 +40,9 @@ import AdminNotice from './pages/admin/AdminNotice';
 import AdminEvents from './pages/admin/AdminEvents';
 import AdminGallery from './pages/admin/AdminGallery';
 import AdminMessages from './pages/admin/AdminMessages';
+import SuperAdminDocuments from './pages/superadmin/SuperAdminDocuments';
+import AdminDocuments from './pages/admin/AdminDocuments';
+import JudgesDocuments from './pages/judge/JudgesDocuments';
 
 const App = () => {
   const dispatch = useAppDispatch();
@@ -74,11 +77,12 @@ const App = () => {
             <Route path="/superadmin/oath" element={<SuperAdminOath />} />
             <Route path="/superadmin/guest-list" element={<SuperAdminGuests />} />
             <Route path="/superadmin/notice-board" element={<SuperAdminNotice />} />
+            <Route path="/superadmin/orhc-documents" element={<SuperAdminDocuments />} />
             <Route path="/superadmin/events-board" element={<SuperAdminEvents />} />
             <Route path="/superadmin/admin-gallery" element={<SuperAdminGallery />} />
             <Route path="/superadmin/messages" element={<SuperAdminMessages />} />
             <Route path="/superadmin/users" element={<AdminUsers />} />
-            <Route path="/superadmin/settings" element={<div className="p-6">System Configurations</div>} />
+            
           </Route>
         </Route>
 
@@ -95,6 +99,7 @@ const App = () => {
             <Route path="/admin/guest-list" element={<AdminGuests />} />
             <Route path="/admin/notice-board" element={<AdminNotice />} />
             <Route path="/admin/events-board" element={<AdminEvents />} />
+            <Route path="/admin/orhc-documents" element={<AdminDocuments />} />
             <Route path="/admin/admin-gallery" element={<AdminGallery />} />
             <Route path="/admin/messages" element={<AdminMessages />} />
           </Route>
@@ -113,6 +118,8 @@ const App = () => {
             <Route path="/judge/guest-registration" element={<JudgeGuest />} />
             <Route path="/judge/notices" element={<JudgeNotice />} />
             <Route path="/judge/events" element={<JudgeEvents />} />
+            <Route path="/judge/events" element={<JudgeEvents />} />
+            <Route path="/judge/orhc-documents" element={<JudgesDocuments />} />
             <Route path="/judge/gallery" element={<JudgeGallery />} />
           </Route>
         </Route>
