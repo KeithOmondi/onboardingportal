@@ -9,12 +9,15 @@ import type { INotice } from "../../interfaces/notices.interface";
 
 // ── Helpers ───────────────────────────────────────────────────────────
 
+/**
+ * FIXED: Removed 'timeZone: UTC' to ensure the display matches the 
+ * local time zone calculation used in deriveEventStatus.
+ */
 const formatDate = (dateStr: string | Date) =>
   new Date(dateStr).toLocaleDateString("en-KE", {
     day: "2-digit",
     month: "short",
     year: "numeric",
-    timeZone: "UTC",
   });
 
 const formatTime = (dateStr: string | Date) =>
@@ -22,7 +25,6 @@ const formatTime = (dateStr: string | Date) =>
     hour: "2-digit",
     minute: "2-digit",
     hour12: true,
-    timeZone: "UTC",
   }).toUpperCase();
 
 const timeAgo = (dateStr: string | Date) => {
@@ -185,6 +187,11 @@ const JudgeDashboard = () => {
 
   // ── Unified Live Status Logic ───────────────────────────────────────────────
 
+  /**
+   * RE-CALCULATED LIVE STATUS: 
+   * This ensures the frontend is the source of truth for "Ongoing" 
+   * based on the judge's actual browser time.
+   */
   const eventsWithLiveStatus = useMemo(() => {
     return events.map(event => ({
       ...event,
@@ -202,7 +209,6 @@ const JudgeDashboard = () => {
     .sort((a, b) => new Date(a.start_time).getTime() - new Date(b.start_time).getTime())
     .slice(0, 4);
 
-  // FIXED: Explicitly typed to resolve unused declaration error
   const recentNotices: INotice[] = [...notices]
     .sort((a, b) => {
       if (a.is_read !== b.is_read) return a.is_read ? 1 : -1;
