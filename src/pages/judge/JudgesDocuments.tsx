@@ -101,7 +101,7 @@ const JudgesDocuments = () => {
     <div className="p-6 max-w-7xl mx-auto bg-[#f9faf9] min-h-screen font-sans">
       <div className="mb-8">
         <h1 className="text-2xl font-bold font-serif text-[#1a3a32] border-b-4 border-[#c2a336] inline-block uppercase tracking-tight">
-          Judicial Document Registry
+          DOCUMENTS
         </h1>
       </div>
 
