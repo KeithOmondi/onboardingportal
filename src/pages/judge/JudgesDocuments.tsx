@@ -64,7 +64,7 @@ const JudgesDocuments = () => {
           }`}
         >
           <LayoutGrid size={14} />
-          Documents Grid
+          Documents
         </button>
         <button
           onClick={() => setActiveTab("handbook")}
