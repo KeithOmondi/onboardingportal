@@ -12,18 +12,23 @@ import {
   Trash2, 
   Eye, 
   FilePlus, 
-  Loader2 
+  Loader2,
+  BookOpen, // Added for Tab Icon
+  Table as TableIcon // Added for Tab Icon
 } from "lucide-react";
 import { format } from "date-fns";
 import type { ICreateDocumentPayload, IDocument } from "../../interfaces/documents.interface";
+import ProgramFlipbook from "../judge/ProgramFlipbook";
 import PreviewModal from "../PreviewModal";
 
-// Define a type for our local form state that allows the file to be null initially
 type UploadFormState = Omit<ICreateDocumentPayload, 'file'> & { file: File | null };
 
-const SuperAdminDocuments = () => {
+const AdminDocuments = () => {
   const dispatch = useAppDispatch();
   const { documents, loading, uploading, success } = useAppSelector((state) => state.documents);
+  
+  // Tab State: 'registry' or 'handbook'
+  const [activeTab, setActiveTab] = useState<"registry" | "handbook">("registry");
   
   const [searchTerm, setSearchTerm] = useState("");
   const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
@@ -36,12 +41,10 @@ const SuperAdminDocuments = () => {
     file: null,
   });
 
-  // 1. Fetching logic
   useEffect(() => {
     dispatch(fetchDocuments({ search: searchTerm }));
   }, [dispatch, searchTerm]);
 
-  // 2. Optimized Success Handling
   useEffect(() => {
     if (success) {
       const resetForm = () => {
@@ -49,7 +52,6 @@ const SuperAdminDocuments = () => {
         setUploadData({ title: "", description: "", document_type: "GENERAL", file: null });
         dispatch(clearDocumentStatus());
       };
-
       const timer = setTimeout(resetForm, 0);
       return () => clearTimeout(timer);
     }
@@ -90,93 +92,129 @@ const SuperAdminDocuments = () => {
         </button>
       </div>
 
-      {/* SEARCH/FILTERS */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-        <div className="relative">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-[#c2a336]" size={18} />
-          <input 
-            type="text"
-            placeholder="Search judicial records by title or ID..."
-            className="w-full pl-10 pr-4 py-3 rounded-xl border border-[#e2e8e4] focus:ring-2 focus:ring-[#c2a336]/20 focus:border-[#c2a336] outline-none text-sm transition-all bg-white"
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-          />
-        </div>
+      {/* TAB NAVIGATION */}
+      <div className="flex items-center gap-1 mb-6 bg-[#e8ede9]/50 p-1 rounded-2xl w-fit border border-[#e2e8e4]">
+        <button
+          onClick={() => setActiveTab("registry")}
+          className={`flex items-center gap-2 px-6 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${
+            activeTab === "registry" 
+            ? "bg-white text-[#1a3a32] shadow-sm border border-[#c2a336]/20" 
+            : "text-[#5c7a6b] hover:bg-white/50"
+          }`}
+        >
+          <TableIcon size={14} />
+          Documents
+        </button>
+        <button
+          onClick={() => setActiveTab("handbook")}
+          className={`flex items-center gap-2 px-6 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${
+            activeTab === "handbook" 
+            ? "bg-white text-[#1a3a32] shadow-sm border border-[#c2a336]/20" 
+            : "text-[#5c7a6b] hover:bg-white/50"
+          }`}
+        >
+          <BookOpen size={14} />
+          Information Handbook
+        </button>
       </div>
 
-      {/* TABLE SECTION */}
-      <div className="bg-white rounded-2xl border border-[#e2e8e4] shadow-sm overflow-hidden">
-        <table className="w-full text-left border-collapse">
-          <thead>
-            <tr className="bg-[#f2f4f2]/50 font-serif">
-              <th className="px-6 py-4 text-[10px] font-black text-[#25443c] uppercase tracking-widest">Document Registry</th>
-              <th className="px-6 py-4 text-[10px] font-black text-[#25443c] uppercase tracking-widest">Classification</th>
-              <th className="px-6 py-4 text-[10px] font-black text-[#25443c] uppercase tracking-widest">Filing Date</th>
-              <th className="px-6 py-4 text-[10px] font-black text-[#25443c] uppercase tracking-widest text-right">Actions</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-[#f2f4f2]">
-            {loading ? (
-              <tr>
-                <td colSpan={4} className="p-20 text-center">
-                  <div className="flex flex-col items-center gap-2">
-                    <Loader2 className="animate-spin text-[#c2a336]" size={32} />
-                    <p className="text-[10px] font-bold text-[#5c7a6b] uppercase tracking-widest">Synchronizing Registry...</p>
-                  </div>
-                </td>
-              </tr>
-            ) : documents.length === 0 ? (
-              <tr>
-                <td colSpan={4} className="p-20 text-center text-[#5c7a6b] italic text-sm">
-                  No records matching the search criteria found.
-                </td>
-              </tr>
-            ) : (
-              documents.map((doc) => (
-                <tr key={doc.id} className="hover:bg-[#f9faf9] group transition-colors">
-                  <td className="px-6 py-5">
-                    <div className="flex items-center gap-4">
-                      <div className="p-2.5 bg-[#e8ede9] rounded-xl text-[#1a3a32] group-hover:bg-[#1a3a32] group-hover:text-white transition-colors">
-                        <FileText size={20} />
-                      </div>
-                      <div>
-                        <p className="text-sm font-bold font-serif uppercase text-[#1a3a32] tracking-tight">{doc.title}</p>
-                        <p className="text-[11px] text-[#5c7a6b] max-w-xs truncate mt-0.5">{doc.description || "No description provided."}</p>
-                      </div>
-                    </div>
-                  </td>
-                  <td className="px-6 py-5">
-                    <span className="px-2.5 py-1 rounded-lg text-[10px] font-black bg-[#f2f4f2] text-[#1a3a32] border border-[#c2a336]/20 uppercase tracking-tighter">
-                      {doc.document_type}
-                    </span>
-                  </td>
-                  <td className="px-6 py-5 text-xs text-[#5c7a6b] font-medium">
-                    {format(new Date(doc.created_at), "MMM dd, yyyy")}
-                  </td>
-                  <td className="px-6 py-5 text-right">
-                    <div className="flex items-center justify-end gap-2">
-                      <button 
-                        onClick={() => setSelectedDocument(doc)} 
-                        title="Open in Chamber"
-                        className="p-2 text-[#5c7a6b] hover:text-[#c2a336] hover:bg-[#c2a336]/10 rounded-lg transition-all"
-                      >
-                        <Eye size={20} />
-                      </button>
-                      <button 
-                        onClick={() => handleDelete(doc.id)} 
-                        title="Purge Record"
-                        className="p-2 text-[#5c7a6b] hover:text-red-600 hover:bg-red-50 rounded-lg transition-all"
-                      >
-                        <Trash2 size={20} />
-                      </button>
-                    </div>
-                  </td>
+      {/* CONDITIONAL RENDERING BASED ON TAB */}
+      {activeTab === "registry" ? (
+        <>
+          {/* SEARCH/FILTERS */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-[#c2a336]" size={18} />
+              <input 
+                type="text"
+                placeholder="Search judicial records by title or ID..."
+                className="w-full pl-10 pr-4 py-3 rounded-xl border border-[#e2e8e4] focus:ring-2 focus:ring-[#c2a336]/20 focus:border-[#c2a336] outline-none text-sm transition-all bg-white"
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+              />
+            </div>
+          </div>
+
+          {/* TABLE SECTION */}
+          <div className="bg-white rounded-2xl border border-[#e2e8e4] shadow-sm overflow-hidden">
+            <table className="w-full text-left border-collapse">
+              <thead>
+                <tr className="bg-[#f2f4f2]/50 font-serif">
+                  <th className="px-6 py-4 text-[10px] font-black text-[#25443c] uppercase tracking-widest">Document Registry</th>
+                  <th className="px-6 py-4 text-[10px] font-black text-[#25443c] uppercase tracking-widest">Classification</th>
+                  <th className="px-6 py-4 text-[10px] font-black text-[#25443c] uppercase tracking-widest">Filing Date</th>
+                  <th className="px-6 py-4 text-[10px] font-black text-[#25443c] uppercase tracking-widest text-right">Actions</th>
                 </tr>
-              ))
-            )}
-          </tbody>
-        </table>
-      </div>
+              </thead>
+              <tbody className="divide-y divide-[#f2f4f2]">
+                {loading ? (
+                  <tr>
+                    <td colSpan={4} className="p-20 text-center">
+                      <div className="flex flex-col items-center gap-2">
+                        <Loader2 className="animate-spin text-[#c2a336]" size={32} />
+                        <p className="text-[10px] font-bold text-[#5c7a6b] uppercase tracking-widest">Synchronizing Registry...</p>
+                      </div>
+                    </td>
+                  </tr>
+                ) : documents.length === 0 ? (
+                  <tr>
+                    <td colSpan={4} className="p-20 text-center text-[#5c7a6b] italic text-sm">
+                      No records matching the search criteria found.
+                    </td>
+                  </tr>
+                ) : (
+                  documents.map((doc) => (
+                    <tr key={doc.id} className="hover:bg-[#f9faf9] group transition-colors">
+                      <td className="px-6 py-5">
+                        <div className="flex items-center gap-4">
+                          <div className="p-2.5 bg-[#e8ede9] rounded-xl text-[#1a3a32] group-hover:bg-[#1a3a32] group-hover:text-white transition-colors">
+                            <FileText size={20} />
+                          </div>
+                          <div>
+                            <p className="text-sm font-bold font-serif uppercase text-[#1a3a32] tracking-tight">{doc.title}</p>
+                            <p className="text-[11px] text-[#5c7a6b] max-w-xs truncate mt-0.5">{doc.description || "No description provided."}</p>
+                          </div>
+                        </div>
+                      </td>
+                      <td className="px-6 py-5">
+                        <span className="px-2.5 py-1 rounded-lg text-[10px] font-black bg-[#f2f4f2] text-[#1a3a32] border border-[#c2a336]/20 uppercase tracking-tighter">
+                          {doc.document_type}
+                        </span>
+                      </td>
+                      <td className="px-6 py-5 text-xs text-[#5c7a6b] font-medium">
+                        {format(new Date(doc.created_at), "MMM dd, yyyy")}
+                      </td>
+                      <td className="px-6 py-5 text-right">
+                        <div className="flex items-center justify-end gap-2">
+                          <button 
+                            onClick={() => setSelectedDocument(doc)} 
+                            title="Open in Chamber"
+                            className="p-2 text-[#5c7a6b] hover:text-[#c2a336] hover:bg-[#c2a336]/10 rounded-lg transition-all"
+                          >
+                            <Eye size={20} />
+                          </button>
+                          <button 
+                            onClick={() => handleDelete(doc.id)} 
+                            title="Purge Record"
+                            className="p-2 text-[#5c7a6b] hover:text-red-600 hover:bg-red-50 rounded-lg transition-all"
+                          >
+                            <Trash2 size={20} />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+        </>
+      ) : (
+        /* FLIPBOOK VIEW */
+        <div className="bg-white rounded-2xl border border-[#e2e8e4] shadow-sm overflow-hidden min-h-[700px]">
+           <ProgramFlipbook />
+        </div>
+      )}
 
       {/* UPLOAD MODAL */}
       {isUploadModalOpen && (
@@ -242,4 +280,4 @@ const SuperAdminDocuments = () => {
   );
 };
 
-export default SuperAdminDocuments;
+export default AdminDocuments;

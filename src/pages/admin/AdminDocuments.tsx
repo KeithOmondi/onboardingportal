@@ -103,7 +103,7 @@ const AdminDocuments = () => {
           }`}
         >
           <TableIcon size={14} />
-          Registry Table
+          Documents
         </button>
         <button
           onClick={() => setActiveTab("handbook")}
