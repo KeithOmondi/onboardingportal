@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useAppDispatch, useAppSelector } from "../../redux/hooks";
 import { fetchEvents } from "../../redux/slices/eventsSlice";
 import { adminFetchNotices } from "../../redux/slices/noticeSlice";
@@ -8,6 +8,7 @@ import { MediaType } from "../../interfaces/gallery.interface"; // Updated Impor
 import type { IJudicialEvent } from "../../interfaces/events.interface";
 import type { IAdminNotice } from "../../interfaces/notices.interface";
 import type { IAdminRegistryRow } from "../../interfaces/guests.interface";
+import api from "../../api/api";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -79,6 +80,56 @@ const MetricCard = ({
   </div>
 );
 
+/** Specialised card for messages showing unread/total split */
+const MessagesMetricCard = ({
+  unreadCount,
+  totalContacts,
+}: {
+  unreadCount: number;
+  totalContacts: number;
+}) => (
+  <div className="bg-white border border-slate-200 rounded-xl p-4 flex flex-col gap-1.5 shadow-sm hover:shadow-md transition-all group">
+    <div className="flex justify-between items-center mb-1">
+      <span className="text-[10px] font-black uppercase tracking-widest text-slate-500">Messages</span>
+      {unreadCount > 0 ? (
+        <span className="w-1.5 h-1.5 bg-red-500 rounded-full animate-pulse" />
+      ) : (
+        <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-pulse" />
+      )}
+    </div>
+
+    {/* Unread / total display */}
+    <div className="flex items-end gap-1.5 leading-none">
+      <span
+        className="text-3xl font-serif font-black"
+        style={{ color: unreadCount > 0 ? "#b91c1c" : "#1a3a2a" }}
+      >
+        {unreadCount}
+      </span>
+      <span className="text-base font-serif font-black text-slate-300 mb-0.5">
+        / {totalContacts}
+      </span>
+    </div>
+
+    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-tighter">
+      {unreadCount > 0
+        ? `${unreadCount} unread · ${totalContacts} contacts`
+        : `All read · ${totalContacts} contacts`}
+    </span>
+
+    {/* Mini progress bar */}
+    <div className="h-1 rounded-full bg-slate-100 overflow-hidden mt-1">
+      <div
+        className="h-full rounded-full transition-all duration-500"
+        style={{
+          width: totalContacts > 0 ? `${Math.min(100, Math.round((unreadCount / totalContacts) * 100))}%` : "0%",
+          background: unreadCount > 0 ? "#b91c1c" : "#166534",
+        }}
+      />
+    </div>
+  </div>
+);
+
 const Badge = ({
   label,
   bg,
@@ -143,6 +194,28 @@ const SuperAdminDashboard = () => {
   const { adminNotices, loading: noticesLoading } = useAppSelector((state) => state.notices);
   const { admin: { allLists: registries, loading: registriesLoading } } = useAppSelector((state) => state.guests);
   const { items, loading: galleryLoading } = useAppSelector((state) => state.gallery);
+
+  // ── Messages stats: lightweight direct fetch (no socket overhead) ──────────
+  const [totalUnreadMessages, setTotalUnreadMessages] = useState(0);
+  const [totalContacts, setTotalContacts] = useState(0);
+
+  useEffect(() => {
+    const fetchMessageStats = async () => {
+      try {
+        const { data } = await api.get<{
+          recipients: { unreadCount?: number }[];
+        }>("/chat/recipients");
+        const list = data.recipients ?? [];
+        setTotalContacts(list.length);
+        setTotalUnreadMessages(
+          list.reduce((sum, r) => sum + (r.unreadCount ?? 0), 0)
+        );
+      } catch (err) {
+        console.error("[SuperAdminDashboard] fetchMessageStats failed:", err);
+      }
+    };
+    fetchMessageStats();
+  }, []);
 
   useEffect(() => {
     dispatch(fetchEvents("ALL"));
@@ -216,7 +289,7 @@ const SuperAdminDashboard = () => {
       </div>
 
       {/* ── Top metric cards ── */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 mb-5">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-6 mb-5">
         <MetricCard
           label="Total events"
           value={totalEvents}
@@ -239,6 +312,10 @@ const SuperAdminDashboard = () => {
           value={totalMediaItems}
           sub={`${imageCount} images · ${videoCount} videos`}
           valueColor="#c2a336"
+        />
+        <MessagesMetricCard
+          unreadCount={totalUnreadMessages}
+          totalContacts={totalContacts}
         />
       </div>
 

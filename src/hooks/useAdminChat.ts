@@ -39,7 +39,7 @@ interface ConversationUpdatedPayload {
   conversationId: string;
   lastMessage: string;
   lastMessageAt: string | Date;
-  senderId: string;
+  senderId: string;        // the user who sent the message — use THIS to match recipient
   recipientType: RecipientType;
 }
 
@@ -88,11 +88,30 @@ export const useAdminChat = () => {
   const selectedRecipientRef = useRef<Recipient | null>(null);
   selectedRecipientRef.current = selectedRecipient;
 
+  // ── Data Fetching ────────────────────────────────────────────────────────
+
+  const fetchRecipients = useCallback(async () => {
+    try {
+      const { data } = await api.get<{ recipients: RecipientResponse[] }>("/chat/recipients");
+      const normalised: Recipient[] = (data.recipients || []).map((r) => ({
+        ...r,
+        lastMessageAt: r.lastMessageAt ? new Date(r.lastMessageAt) : undefined,
+        unreadCount: r.unreadCount || 0,
+      }));
+      setRecipients(normalised);
+    } catch (err) {
+      console.error("[useAdminChat] fetchRecipients failed:", err);
+    }
+  }, []);
+
+  useEffect(() => { fetchRecipients(); }, [fetchRecipients]);
+
   // ── Actions ──────────────────────────────────────────────────────────────
 
   const markAsRead = useCallback(async (recipientId: string) => {
     try {
       await api.post(`/chat/read/${recipientId}`);
+      // Optimistically zero out in UI immediately
       setRecipients((prev) =>
         prev.map((r) => (r.id === recipientId ? { ...r, unreadCount: 0 } : r))
       );
@@ -102,16 +121,21 @@ export const useAdminChat = () => {
   }, []);
 
   const updateRecipientActivity = useCallback(
-    (userId: string, timestamp: string | Date, isIncoming: boolean) => {
+    (
+      senderId: string,        // the actual user id who sent the message
+      timestamp: string | Date,
+      isIncoming: boolean
+    ) => {
       setRecipients((prev) => {
-        const idx = prev.findIndex((r) => r.id === userId);
+        // Match by senderId (the non-admin user's id), NOT conversationId
+        const idx = prev.findIndex((r) => r.id === senderId);
         if (idx === -1) return prev;
 
-        const isOpen = selectedRecipientRef.current?.id === userId;
+        const isOpen = selectedRecipientRef.current?.id === senderId;
         const current = prev[idx];
 
-        const newUnreadCount = isIncoming && !isOpen 
-          ? (current.unreadCount ?? 0) + 1 
+        const newUnreadCount = isIncoming && !isOpen
+          ? (current.unreadCount ?? 0) + 1
           : current.unreadCount;
 
         const updated: Recipient = {
@@ -143,7 +167,8 @@ export const useAdminChat = () => {
     socket.on("conversation:updated", (payload: ConversationUpdatedPayload) => {
       if (payload.recipientType !== "single") return;
       const isIncoming = payload.senderId !== user.id;
-      updateRecipientActivity(payload.conversationId, payload.lastMessageAt, isIncoming);
+      // FIX: use senderId (the non-admin user's id) — NOT conversationId
+      updateRecipientActivity(payload.senderId, payload.lastMessageAt, isIncoming);
     });
 
     socket.on("admin:message:sent", (confirmed: ChatMessage) => {
@@ -177,23 +202,7 @@ export const useAdminChat = () => {
     return () => { socket.disconnect(); };
   }, [user, updateRecipientActivity, markAsRead]);
 
-  // ── Data Fetching ────────────────────────────────────────────────────────
-
-  const fetchRecipients = useCallback(async () => {
-    try {
-      const { data } = await api.get<{ recipients: RecipientResponse[] }>("/chat/recipients");
-      const normalised: Recipient[] = (data.recipients || []).map((r) => ({
-        ...r,
-        lastMessageAt: r.lastMessageAt ? new Date(r.lastMessageAt) : undefined,
-        unreadCount: r.unreadCount || 0,
-      }));
-      setRecipients(normalised);
-    } catch (err) {
-      console.error("[useAdminChat] fetchRecipients failed:", err);
-    }
-  }, []);
-
-  useEffect(() => { fetchRecipients(); }, [fetchRecipients]);
+  // ── Broadcasts ───────────────────────────────────────────────────────────
 
   const fetchBroadcasts = useCallback(async () => {
     setLoadingBroadcasts(true);
@@ -204,6 +213,8 @@ export const useAdminChat = () => {
       setBroadcastHistory([]);
     } finally { setLoadingBroadcasts(false); }
   }, []);
+
+  // ── Select recipient ─────────────────────────────────────────────────────
 
   const selectRecipient = useCallback(async (recipient: Recipient) => {
     setSelectedRecipient(recipient);
