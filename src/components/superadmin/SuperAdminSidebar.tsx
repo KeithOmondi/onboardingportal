@@ -1,14 +1,12 @@
+import { useMemo } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import {
   LayoutDashboard, Gavel, Map, Settings, LogOut, Users, X, Group,
-  Pen,
-  ShowerHeadIcon,
-  Camera,
-  MessageCircle,
-  PaperclipIcon
+  Pen, ShowerHeadIcon, Camera, MessageCircle, PaperclipIcon
 } from 'lucide-react';
 import { useAppDispatch } from '../../redux/hooks';
 import { logout } from '../../redux/slices/authSlice';
+import { useAdminChat } from '../../hooks/useAdminChat';
 
 interface AdminSidebarProps {
   isOpen: boolean;
@@ -18,18 +16,31 @@ interface AdminSidebarProps {
 const AdminSidebar = ({ isOpen, onClose }: AdminSidebarProps) => {
   const location = useLocation();
   const dispatch = useAppDispatch();
+  
+  // fetchRecipients is part of useAdminChat to pull data from DB
+  const { recipients } = useAdminChat();
+
+  // Calculate total unread count from the recipients list provided by the hook
+  const totalUnreadCount = useMemo(() => {
+    return recipients.reduce((sum, r) => sum + (r.unreadCount || 0), 0);
+  }, [recipients]);
 
   const menuItems = [
-    { title: 'Dashboard',              icon: <LayoutDashboard size={20} />, path: '/superadmin/dashboard' },
+    { title: 'Dashboard',             icon: <LayoutDashboard size={20} />, path: '/superadmin/dashboard' },
     { title: 'High Court Information', icon: <Map size={20} />,             path: '/superadmin/highcourtinformation' },
     { title: 'Oath Details',           icon: <Gavel size={20} />,           path: '/superadmin/oath' },
     { title: 'Guest List',             icon: <Group size={20} />,           path: '/superadmin/guest-list' },
-    { title: 'Notice Board',             icon: <Pen size={20} />,           path: '/superadmin/notice-board' },
-    { title: 'Documents',             icon: <PaperclipIcon size={20} />,           path: '/superadmin/orhc-documents' },
-    { title: 'Events Board',             icon: <ShowerHeadIcon size={20} />,           path: '/superadmin/events-board' },
-    { title: 'Gallery',             icon: <Camera size={20} />,           path: '/superadmin/admin-gallery' },
+    { title: 'Notice Board',           icon: <Pen size={20} />,             path: '/superadmin/notice-board' },
+    { title: 'Documents',              icon: <PaperclipIcon size={20} />,   path: '/superadmin/orhc-documents' },
+    { title: 'Events Board',           icon: <ShowerHeadIcon size={20} />,  path: '/superadmin/events-board' },
+    { title: 'Gallery',                icon: <Camera size={20} />,          path: '/superadmin/admin-gallery' },
     { title: 'All Judges',             icon: <Users size={20} />,           path: '/superadmin/users' },
-    { title: 'Messages',             icon: <MessageCircle size={20} />,           path: '/superadmin/messages' },
+    { 
+      title: 'Messages', 
+      icon: <MessageCircle size={20} />, 
+      path: '/superadmin/messages',
+      count: totalUnreadCount 
+    },
     { title: 'Settings',               icon: <Settings size={20} />,        path: '/superadmin/settings' },
   ];
 
@@ -56,55 +67,60 @@ const AdminSidebar = ({ isOpen, onClose }: AdminSidebarProps) => {
           style={{ borderBottom: '1px solid rgba(201,146,42,0.3)' }}
         >
           <div>
-            <h1
-              className="text-[15px] font-serif font-bold tracking-tight"
-              style={{ color: '#C9922A' }}
-            >
+            <h1 className="text-[15px] font-serif font-bold tracking-tight" style={{ color: '#C9922A' }}>
               ONBOARDING PORTAL
             </h1>
             <p className="text-xs mt-1 uppercase tracking-widest" style={{ color: 'rgba(255,255,255,0.4)' }}>
               Administrator
             </p>
           </div>
-          <button
-            onClick={onClose}
-            className="lg:hidden p-1 transition-colors"
-            style={{ color: 'rgba(255,255,255,0.4)' }}
-            aria-label="Close menu"
-          >
+          <button onClick={onClose} className="lg:hidden p-1 transition-colors" style={{ color: 'rgba(255,255,255,0.4)' }}>
             <X size={20} />
           </button>
         </div>
 
         <nav className="flex-1 px-4 py-6 space-y-1 overflow-y-auto">
-          {menuItems.map((item) => (
-            <Link
-              key={item.path}
-              to={item.path}
-              onClick={onClose}
-              className="flex items-center gap-3 px-4 py-3 rounded-lg transition-all duration-200"
-              style={
-                location.pathname === item.path
-                  ? { backgroundColor: '#C9922A', color: '#fff' }
-                  : { color: 'rgba(255,255,255,0.55)' }
-              }
-              onMouseEnter={(e) => {
-                if (location.pathname !== item.path) {
-                  e.currentTarget.style.backgroundColor = 'rgba(201,146,42,0.15)';
-                  e.currentTarget.style.color = '#fff';
+          {menuItems.map((item) => {
+            const isActive = location.pathname === item.path;
+            
+            return (
+              <Link
+                key={item.path}
+                to={item.path}
+                onClick={onClose}
+                className="flex items-center justify-between px-4 py-3 rounded-lg transition-all duration-200 group relative"
+                style={
+                  isActive
+                    ? { backgroundColor: '#C9922A', color: '#fff' }
+                    : { color: 'rgba(255,255,255,0.55)' }
                 }
-              }}
-              onMouseLeave={(e) => {
-                if (location.pathname !== item.path) {
-                  e.currentTarget.style.backgroundColor = 'transparent';
-                  e.currentTarget.style.color = 'rgba(255,255,255,0.55)';
-                }
-              }}
-            >
-              {item.icon}
-              <span className="font-medium">{item.title}</span>
-            </Link>
-          ))}
+                onMouseEnter={(e) => {
+                  if (!isActive) {
+                    e.currentTarget.style.backgroundColor = 'rgba(201,146,42,0.15)';
+                    e.currentTarget.style.color = '#fff';
+                  }
+                }}
+                onMouseLeave={(e) => {
+                  if (!isActive) {
+                    e.currentTarget.style.backgroundColor = 'transparent';
+                    e.currentTarget.style.color = 'rgba(255,255,255,0.55)';
+                  }
+                }}
+              >
+                <div className="flex items-center gap-3">
+                  {item.icon}
+                  <span className="font-medium">{item.title}</span>
+                </div>
+
+                {/* The Persistent Unread Badge */}
+                {item.count !== undefined && item.count > 0 && (
+                  <span className="flex items-center justify-center min-w-[22px] h-5 px-1.5 text-[10px] font-bold bg-red-600 text-white rounded-full shadow-lg border border-white/10 animate-pulse">
+                    {item.count > 99 ? '99+' : item.count}
+                  </span>
+                )}
+              </Link>
+            );
+          })}
         </nav>
 
         <div className="p-4" style={{ borderTop: '1px solid rgba(201,146,42,0.3)' }}>

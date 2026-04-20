@@ -1,8 +1,24 @@
 import { useEffect, useRef, useState, useCallback, useMemo } from "react";
 import { useAppSelector } from "../redux/hooks";
-import { useChat, type ChatMessage } from "./useChat";
+import { useChat } from "./useChat";
 import api from "../api/api";
 import { io, type Socket } from "socket.io-client";
+
+// ── Types ──────────────────────────────────────────────────────────────────
+export type RecipientType = 'single' | 'group' | 'broadcast';
+
+export interface ChatMessage {
+  id?: string;
+  sender_id: string;
+  sender_name: string;
+  sender_role: string;
+  recipient_id?: string | null;
+  recipient_type: RecipientType;
+  target_roles?: string[] | null;
+  message: string;
+  created_at: string | Date;
+  _tempId?: string;
+}
 
 export interface Recipient {
   id: string;
@@ -11,7 +27,12 @@ export interface Recipient {
   role: string;
   avatar_url?: string;
   lastMessageAt?: Date;
-  unreadCount?: number;
+  unreadCount: number;
+}
+
+/** Interface for raw API response to avoid 'any' */
+interface RecipientResponse extends Omit<Recipient, 'lastMessageAt'> {
+  lastMessageAt?: string | Date;
 }
 
 interface ConversationUpdatedPayload {
@@ -19,11 +40,10 @@ interface ConversationUpdatedPayload {
   lastMessage: string;
   lastMessageAt: string | Date;
   senderId: string;
-  senderName: string;
-  senderRole: string;
-  recipientType: "single" | "broadcast" | "group";
-  targetRoles?: string[] | null;
+  recipientType: RecipientType;
 }
+
+// ── Helpers ────────────────────────────────────────────────────────────────
 
 const getSocketUrl = () => {
   if (import.meta.env.VITE_SOCKET_URL) return import.meta.env.VITE_SOCKET_URL;
@@ -43,9 +63,12 @@ const confirmMessage = (prev: ChatMessage[], confirmed: ChatMessage): ChatMessag
       return next;
     }
   }
-  if (confirmed.id && prev.some((m) => m.id === confirmed.id)) return prev;
+  const idToMatch = confirmed.id;
+  if (idToMatch && prev.some((m) => m.id === idToMatch)) return prev;
   return [...prev, confirmed];
 };
+
+// ── Hook ───────────────────────────────────────────────────────────────────
 
 export const useAdminChat = () => {
   const { user } = useAppSelector((state) => state.auth);
@@ -57,7 +80,6 @@ export const useAdminChat = () => {
   const [liveMessages, setLiveMessages] = useState<ChatMessage[]>([]);
   const [loadingHistory, setLoadingHistory] = useState(false);
 
-  // ── Broadcast state ──────────────────────────────────────────
   const [broadcastHistory, setBroadcastHistory] = useState<ChatMessage[]>([]);
   const [liveBroadcasts, setLiveBroadcasts] = useState<ChatMessage[]>([]);
   const [loadingBroadcasts, setLoadingBroadcasts] = useState(false);
@@ -65,6 +87,19 @@ export const useAdminChat = () => {
   const socketRef = useRef<Socket | null>(null);
   const selectedRecipientRef = useRef<Recipient | null>(null);
   selectedRecipientRef.current = selectedRecipient;
+
+  // ── Actions ──────────────────────────────────────────────────────────────
+
+  const markAsRead = useCallback(async (recipientId: string) => {
+    try {
+      await api.post(`/chat/read/${recipientId}`);
+      setRecipients((prev) =>
+        prev.map((r) => (r.id === recipientId ? { ...r, unreadCount: 0 } : r))
+      );
+    } catch (err) {
+      console.error("[useAdminChat] Failed to mark as read:", err);
+    }
+  }, []);
 
   const updateRecipientActivity = useCallback(
     (userId: string, timestamp: string | Date, isIncoming: boolean) => {
@@ -75,31 +110,33 @@ export const useAdminChat = () => {
         const isOpen = selectedRecipientRef.current?.id === userId;
         const current = prev[idx];
 
+        const newUnreadCount = isIncoming && !isOpen 
+          ? (current.unreadCount ?? 0) + 1 
+          : current.unreadCount;
+
         const updated: Recipient = {
           ...current,
           lastMessageAt: new Date(timestamp),
-          unreadCount:
-            isIncoming && !isOpen
-              ? (current.unreadCount ?? 0) + 1
-              : (current.unreadCount ?? 0),
+          unreadCount: newUnreadCount,
         };
 
         const next = [...prev];
-        next[idx] = updated;
-        return next;
+        next.splice(idx, 1);
+        return [updated, ...next];
       });
     },
     []
   );
 
-  // ── Socket setup ─────────────────────────────────────────────
+  // ── Socket setup ─────────────────────────────────────────────────────────
+
   useEffect(() => {
-    if (!user?.full_name) return;
+    if (!user?.id) return;
 
     const socket = io(SOCKET_URL, {
       query: { userId: user.id, role: user.role, name: user.full_name },
       withCredentials: true,
-      transports: ["websocket", "polling"],
+      transports: ["websocket"],
     });
     socketRef.current = socket;
 
@@ -110,38 +147,25 @@ export const useAdminChat = () => {
     });
 
     socket.on("admin:message:sent", (confirmed: ChatMessage) => {
-      if (
-        confirmed.recipient_type === "broadcast" ||
-        confirmed.recipient_type === "group"
-      ) {
+      if (confirmed.recipient_type !== "single") {
         setLiveBroadcasts((prev) => confirmMessage(prev, confirmed));
         return;
       }
-
       const partner = selectedRecipientRef.current;
-      if (
-        partner &&
-        (confirmed.sender_id === partner.id || confirmed.recipient_id === partner.id)
-      ) {
+      if (partner && (confirmed.sender_id === partner.id || confirmed.recipient_id === partner.id)) {
         setLiveMessages((prev) => confirmMessage(prev, confirmed));
       }
     });
 
     socket.on("admin:receive", (msg: ChatMessage) => {
-      if (
-        msg.recipient_type === "broadcast" ||
-        msg.recipient_type === "group"
-      ) {
+      if (msg.recipient_type !== "single") {
         setLiveBroadcasts((prev) => confirmMessage(prev, msg));
         return;
       }
-
       const partner = selectedRecipientRef.current;
-      if (
-        partner &&
-        (msg.sender_id === partner.id || msg.recipient_id === partner.id)
-      ) {
+      if (partner && (msg.sender_id === partner.id || msg.recipient_id === partner.id)) {
         setLiveMessages((prev) => confirmMessage(prev, msg));
+        markAsRead(partner.id);
       }
     });
 
@@ -150,41 +174,35 @@ export const useAdminChat = () => {
       setLiveBroadcasts((prev) => prev.filter((m) => m._tempId !== _tempId));
     });
 
-    return () => {
-      socket.disconnect();
-    };
-  }, [user, updateRecipientActivity]);
+    return () => { socket.disconnect(); };
+  }, [user, updateRecipientActivity, markAsRead]);
+
+  // ── Data Fetching ────────────────────────────────────────────────────────
 
   const fetchRecipients = useCallback(async () => {
-  try {
-    const { data } = await api.get("/chat/recipients");
-    const normalised: Recipient[] = (data.recipients as Recipient[]).map((r) => ({
-      ...r,
-      // DB returns the column alias as "lastMessageAt" (quoted in SQL, so case-preserved)
-      lastMessageAt: r.lastMessageAt ? new Date(r.lastMessageAt) : undefined,
-      unreadCount: 0,
-    }));
-    setRecipients(normalised);
-  } catch (err) {
-    console.error("[useAdminChat] fetchRecipients failed:", err);
-  }
-}, []);
+    try {
+      const { data } = await api.get<{ recipients: RecipientResponse[] }>("/chat/recipients");
+      const normalised: Recipient[] = (data.recipients || []).map((r) => ({
+        ...r,
+        lastMessageAt: r.lastMessageAt ? new Date(r.lastMessageAt) : undefined,
+        unreadCount: r.unreadCount || 0,
+      }));
+      setRecipients(normalised);
+    } catch (err) {
+      console.error("[useAdminChat] fetchRecipients failed:", err);
+    }
+  }, []);
 
-  useEffect(() => {
-    fetchRecipients();
-  }, [fetchRecipients]);
+  useEffect(() => { fetchRecipients(); }, [fetchRecipients]);
 
   const fetchBroadcasts = useCallback(async () => {
     setLoadingBroadcasts(true);
     try {
-      const { data } = await api.get("/chat/broadcasts");
+      const { data } = await api.get<{ broadcasts: ChatMessage[] }>("/chat/broadcasts");
       setBroadcastHistory(data.broadcasts ?? []);
-    } catch (err) {
-      console.error("[useAdminChat] fetchBroadcasts failed:", err);
+    } catch {
       setBroadcastHistory([]);
-    } finally {
-      setLoadingBroadcasts(false);
-    }
+    } finally { setLoadingBroadcasts(false); }
   }, []);
 
   const selectRecipient = useCallback(async (recipient: Recipient) => {
@@ -192,139 +210,102 @@ export const useAdminChat = () => {
     setLiveMessages([]);
     setLoadingHistory(true);
 
-    setRecipients((prev) =>
-      prev.map((r) => (r.id === recipient.id ? { ...r, unreadCount: 0 } : r))
-    );
+    if (recipient.unreadCount > 0) {
+      markAsRead(recipient.id);
+    }
 
     try {
-      const { data } = await api.get(`/chat/history/${recipient.id}`);
+      const { data } = await api.get<{ messages: ChatMessage[] }>(`/chat/history/${recipient.id}`);
       setHistory(data.messages ?? []);
-    } catch (err) {
-      console.error("[useAdminChat] loadHistory failed:", err);
+    } catch {
       setHistory([]);
-    } finally {
-      setLoadingHistory(false);
-    }
-  }, []);
+    } finally { setLoadingHistory(false); }
+  }, [markAsRead]);
 
-  const sendToUser = useCallback(
-    (message: string, recipientId: string) => {
-      if (!socketRef.current || !user) return;
+  // ── Sending ──────────────────────────────────────────────────────────────
 
-      const _tempId = crypto.randomUUID();
-      const optimistic: ChatMessage = {
-        _tempId,
-        sender_id: user.id,
-        sender_name: user.full_name,
-        sender_role: user.role,
-        recipient_id: recipientId,
-        recipient_type: "single",
-        message,
-        created_at: new Date(),
-      };
+  const sendToUser = useCallback((message: string, recipientId: string) => {
+    if (!socketRef.current || !user) return;
+    const _tempId = crypto.randomUUID();
+    const optimistic: ChatMessage = {
+      _tempId,
+      sender_id: user.id,
+      sender_name: user.full_name,
+      sender_role: user.role,
+      recipient_id: recipientId,
+      recipient_type: "single",
+      message,
+      created_at: new Date().toISOString(),
+    };
+    setLiveMessages((prev) => [...prev, optimistic]);
+    socketRef.current.emit("admin:message:single", {
+      _tempId,
+      senderId: user.id,
+      recipientId,
+      message,
+    });
+  }, [user]);
 
-      setLiveMessages((prev) => [...prev, optimistic]);
+  const sendBroadcast = useCallback((
+    message: string,
+    type: "broadcast" | "group",
+    targetRoles?: string[],
+    targetUserIds?: string[]
+  ) => {
+    if (!socketRef.current || !user) return;
+    const _tempId = crypto.randomUUID();
+    const optimistic: ChatMessage = {
+      _tempId,
+      sender_id: user.id,
+      sender_name: user.full_name,
+      sender_role: user.role,
+      recipient_type: type,
+      target_roles: targetRoles ?? null,
+      message,
+      created_at: new Date().toISOString(),
+    };
+    setLiveBroadcasts((prev) => [...prev, optimistic]);
+    socketRef.current.emit(type === "broadcast" ? "admin:message:broadcast" : "admin:message:group", {
+      _tempId,
+      senderId: user.id,
+      recipientType: type,
+      targetRoles,
+      targetUserIds,
+      message,
+    });
+  }, [user]);
 
-      socketRef.current.emit("admin:message:single", {
-        _tempId,
-        senderId: user.id,
-        senderName: user.full_name,
-        senderRole: user.role,
-        recipientId,
-        recipientType: "single",
-        message,
-      });
-    },
-    [user]
-  );
+  // ── Memoized Merges ──────────────────────────────────────────────────────
 
-  const sendBroadcast = useCallback(
-    (
-      message: string,
-      type: "broadcast" | "group",
-      targetRoles?: string[],
-      targetUserIds?: string[]
-    ) => {
-      if (!socketRef.current || !user) return;
-
-      const _tempId = crypto.randomUUID();
-      const optimistic: ChatMessage = {
-        _tempId,
-        sender_id: user.id,
-        sender_name: user.full_name,
-        sender_role: user.role,
-        recipient_id: null,
-        recipient_type: type,
-        target_roles: targetRoles ?? null,
-        message,
-        created_at: new Date(),
-      };
-
-      setLiveBroadcasts((prev) => [...prev, optimistic]);
-
-      const event =
-        type === "broadcast" ? "admin:message:broadcast" : "admin:message:group";
-
-      socketRef.current.emit(event, {
-        _tempId,
-        senderId: user.id,
-        senderName: user.full_name,
-        senderRole: user.role,
-        recipientType: type,
-        targetRoles,
-        targetUserIds,
-        message,
-      });
-    },
-    [user]
-  );
-
-  // ── Unified Merge & Sort Logic ───────────────────────────────
-  
   const conversationMessages = useMemo(() => {
     const seenIds = new Set<string>();
-    const combined = [...history, ...liveMessages];
-    
-    return combined
+    return [...history, ...liveMessages]
       .filter((msg) => {
         const key = msg.id ?? msg._tempId;
-        if (!key) return true;
-        if (seenIds.has(key)) return false;
+        if (!key || seenIds.has(key)) return false;
         seenIds.add(key);
         return true;
       })
-      .sort((a, b) => {
-        const tA = a.created_at ? new Date(a.created_at).getTime() : 0;
-        const tB = b.created_at ? new Date(b.created_at).getTime() : 0;
-        return tA - tB;
-      });
+      .sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
   }, [history, liveMessages]);
 
   const broadcastMessages = useMemo(() => {
     const seenIds = new Set<string>();
-    const combined = [...broadcastHistory, ...liveBroadcasts];
-    
-    return combined
+    return [...broadcastHistory, ...liveBroadcasts]
       .filter((msg) => {
         const key = msg.id ?? msg._tempId;
-        if (!key) return true;
-        if (seenIds.has(key)) return false;
+        if (!key || seenIds.has(key)) return false;
         seenIds.add(key);
         return true;
       })
-      .sort((a, b) => {
-        const tA = a.created_at ? new Date(a.created_at).getTime() : 0;
-        const tB = b.created_at ? new Date(b.created_at).getTime() : 0;
-        return tA - tB;
-      });
+      .sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
   }, [broadcastHistory, liveBroadcasts]);
 
   const sortedRecipients = useMemo(() => {
     return [...recipients].sort((a, b) => {
       const tA = a.lastMessageAt?.getTime() ?? 0;
       const tB = b.lastMessageAt?.getTime() ?? 0;
-      if (tB !== tA) return tB - tA;
-      return a.full_name.localeCompare(b.full_name);
+      return tB - tA || a.full_name.localeCompare(b.full_name);
     });
   }, [recipients]);
 

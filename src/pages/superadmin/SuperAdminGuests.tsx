@@ -4,10 +4,12 @@ import {
   Search, Loader2, ChevronUp, ChevronDown, ChevronsUpDown,
   Users, CheckCircle2, Clock3, ShieldCheck, Hash, Phone,
   Mail, FileStack, Download, FileSpreadsheet, FileText, AlertCircle,
+  Edit3, Save, X
 } from "lucide-react";
 import {
   adminGetAllRegistries, adminGetRegistryById, exportFullRegistryPDF,
   exportFullRegistryExcel, exportFullRegistryWord, downloadGuestListPDF,
+  updateGuestDetail
 } from "../../redux/slices/guestSlice";
 import { fetchAllUsers } from "../../redux/slices/userSlice";
 import type { AppDispatch, RootState } from "../../redux/store";
@@ -60,39 +62,125 @@ const DetailItem = ({ label, value }: { label: string; value: string }) => (
   </div>
 );
 
-const GuestCard = ({ guest, idx }: { guest: IGuest; idx: number }) => (
-  <div className="bg-slate-50 border border-slate-100 rounded-2xl p-5 space-y-4">
-    <div className="flex justify-between items-start">
-      <div className="flex items-center gap-2">
-        <div className="w-8 h-8 rounded-full bg-[#355E3B]/10 flex items-center justify-center text-[#355E3B] font-bold text-xs">{idx + 1}</div>
-        <h4 className="text-sm font-bold text-slate-800">{guest.name || "Unnamed Guest"}</h4>
-      </div>
-      <span className="text-[9px] font-black uppercase tracking-tighter bg-white px-2 py-0.5 rounded border border-slate-200 text-slate-500">{guest.type}</span>
-    </div>
-    <div className="grid grid-cols-2 gap-4">
-      <DetailItem label="Gender" value={guest.gender || "Not Specified"} />
-      <DetailItem label="ID Status" value={guest.id_number || guest.birth_cert_number ? "Verified" : "Missing Info"} />
-    </div>
-    <div className="space-y-2 pt-2 border-t border-slate-200">
-      <div className="flex items-center gap-2 text-xs text-slate-600">
-        <Hash size={14} className="text-slate-400" />
-        <span className="font-medium truncate">{guest.id_number || guest.birth_cert_number || "No ID/Cert"}</span>
-      </div>
-      {guest.type === "ADULT" && (
-        <>
-          <div className="flex items-center gap-2 text-xs text-slate-600">
-            <Phone size={14} className="text-slate-400" />
-            <span className="font-medium">{guest.phone || "No Phone"}</span>
+/**
+ * UPDATED: Editable Guest Card
+ * Includes local edit state and integration with updateGuestDetail thunk
+ */
+const GuestCard = ({ guest, idx }: { guest: IGuest; idx: number }) => {
+  const dispatch = useDispatch<AppDispatch>();
+  const isSaving = useSelector((state: RootState) => state.guests.isSaving);
+  
+  // Local state for toggling edit mode and holding form values
+  const [isEditing, setIsEditing] = useState(false);
+  const [formData, setFormData] = useState<Partial<IGuest>>({
+    name: guest.name,
+    phone: guest.phone,
+    email: guest.email,
+  });
+
+  const handleUpdate = async () => {
+    if (!guest.id) return;
+    const result = await dispatch(updateGuestDetail({ id: guest.id, guestData: formData }));
+    if (updateGuestDetail.fulfilled.match(result)) {
+      setIsEditing(false);
+    }
+  };
+
+  return (
+    <div className="bg-slate-50 border border-slate-100 rounded-2xl p-5 space-y-4 relative">
+      <div className="flex justify-between items-start">
+        <div className="flex items-center gap-2 flex-1">
+          <div className="w-8 h-8 rounded-full bg-[#355E3B]/10 flex items-center justify-center text-[#355E3B] font-bold text-xs shrink-0">
+            {idx + 1}
           </div>
-          <div className="flex items-center gap-2 text-xs text-slate-600">
-            <Mail size={14} className="text-slate-400" />
-            <span className="truncate font-medium">{guest.email || "No Email"}</span>
-          </div>
-        </>
-      )}
+          {isEditing ? (
+            <input
+              className="text-sm font-bold text-slate-800 bg-white border border-[#355E3B]/30 rounded px-2 py-1 w-full focus:outline-none focus:ring-1 focus:ring-[#355E3B]"
+              value={formData.name || ""}
+              onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+              autoFocus
+            />
+          ) : (
+            <h4 className="text-sm font-bold text-slate-800 truncate">{guest.name || "Unnamed Guest"}</h4>
+          )}
+        </div>
+        
+        <div className="flex items-center gap-2 ml-2">
+          {/* If not editing, show the Edit button. If editing, show Save/Cancel */}
+          {!isEditing ? (
+            <button 
+              onClick={() => setIsEditing(true)}
+              className="p-1.5 text-[#355E3B] bg-white border border-slate-200 rounded-lg hover:bg-slate-100 transition-colors shadow-sm"
+              title="Edit Guest"
+            >
+              <Edit3 size={14} />
+            </button>
+          ) : (
+            <div className="flex gap-1">
+              <button 
+                onClick={handleUpdate} 
+                disabled={isSaving} 
+                className="p-1.5 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors disabled:opacity-50"
+              >
+                {isSaving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
+              </button>
+              <button 
+                onClick={() => setIsEditing(false)} 
+                className="p-1.5 bg-white border border-slate-200 text-red-500 rounded-lg hover:bg-slate-50 transition-colors"
+              >
+                <X size={14} />
+              </button>
+            </div>
+          )}
+          <span className="text-[9px] font-black uppercase tracking-tighter bg-white px-2 py-0.5 rounded border border-slate-200 text-slate-500">
+            {guest.type}
+          </span>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-2 gap-4">
+        <DetailItem label="Gender" value={guest.gender || "Not Specified"} />
+        <DetailItem label="ID Status" value={guest.id_number || guest.birth_cert_number ? "Verified" : "Missing Info"} />
+      </div>
+
+      <div className="space-y-2 pt-2 border-t border-slate-200">
+        <div className="flex items-center gap-2 text-xs text-slate-600">
+          <Hash size={14} className="text-slate-400 shrink-0" />
+          <span className="font-medium truncate">{guest.id_number || guest.birth_cert_number || "No ID/Cert"}</span>
+        </div>
+        
+        {guest.type === "ADULT" && (
+          <>
+            <div className="flex items-center gap-2 text-xs text-slate-600">
+              <Phone size={14} className="text-slate-400 shrink-0" />
+              {isEditing ? (
+                <input
+                  className="text-xs font-medium text-slate-600 bg-white border border-[#355E3B]/30 rounded px-2 py-0.5 w-full"
+                  value={formData.phone || ""}
+                  onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
+                />
+              ) : (
+                <span className="font-medium">{guest.phone || "No Phone"}</span>
+              )}
+            </div>
+            <div className="flex items-center gap-2 text-xs text-slate-600">
+              <Mail size={14} className="text-slate-400 shrink-0" />
+              {isEditing ? (
+                <input
+                  className="text-xs font-medium text-slate-600 bg-white border border-[#355E3B]/30 rounded px-2 py-0.5 w-full"
+                  value={formData.email || ""}
+                  onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                />
+              ) : (
+                <span className="truncate font-medium">{guest.email || "No Email"}</span>
+              )}
+            </div>
+          </>
+        )}
+      </div>
     </div>
-  </div>
-);
+  );
+};
 
 const SuperAdminGuests = () => {
   const dispatch = useDispatch<AppDispatch>();
@@ -320,7 +408,7 @@ const SuperAdminGuests = () => {
                             <div className="flex flex-col gap-8">
                                <h3 className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 border-b border-slate-100 pb-4">Registrant Guest Details</h3>
                                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                                  {expandedRegistry.guests.map((g, idx) => <GuestCard key={idx} guest={g} idx={idx} />)}
+                                  {expandedRegistry.guests.map((g, idx) => <GuestCard key={g.id || idx} guest={g} idx={idx} />)}
                                </div>
                             </div>
                           )}

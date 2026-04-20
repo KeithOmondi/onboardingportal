@@ -191,6 +191,18 @@ export const exportFullRegistryWord = createAsyncThunk(
   }
 );
 
+export const updateGuestDetail = createAsyncThunk(
+  "guests/updateGuest",
+  async ({ id, guestData }: { id: number; guestData: Partial<IGuest> }, { rejectWithValue }) => {
+    try {
+      const { data } = await api.patch(`/guests/update-guest/${id}`, guestData);
+      return data.data; // This returns the updated guest object from the server
+    } catch (err) {
+      return rejectWithValue(getErrorMessage(err));
+    }
+  }
+);
+
 /* =====================================================
     SLICE
 ===================================================== */
@@ -230,6 +242,27 @@ const guestSlice = createSlice({
         state.loading = false;
         state.error = action.payload as string;
       });
+    });
+
+    // Update Individual Guest Detail
+    builder.addCase(updateGuestDetail.pending, (state) => {
+      state.isSaving = true;
+    });
+    builder.addCase(updateGuestDetail.fulfilled, (state, action) => {
+      state.isSaving = false;
+      const updatedGuest = action.payload;
+      
+      // Update the guest in the local list
+      const index = state.myRegistry.guests.findIndex(g => g.id === updatedGuest.id);
+      if (index !== -1) {
+        state.myRegistry.guests[index] = updatedGuest;
+      }
+      
+      state.message = "Guest updated successfully";
+    });
+    builder.addCase(updateGuestDetail.rejected, (state, action) => {
+      state.isSaving = false;
+      state.error = action.payload as string;
     });
 
     // Admin List
