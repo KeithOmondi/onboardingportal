@@ -278,7 +278,7 @@ const SuperAdminDashboard = () => {
             {greeting}, {displayName.split(' ')[0]}
           </h1>
           <p className="text-slate-500 text-sm font-medium mt-1">
-            Real-time ORHC Monitoring & Registry Oversight
+             ORHC Monitoring and Oversight
           </p>
         </div>
         {loading && (
@@ -358,7 +358,7 @@ const SuperAdminDashboard = () => {
           <div className="p-6 bg-slate-50/50">
             <SectionTitle>Guests Overview</SectionTitle>
             {recentRegistries.length === 0 ? (
-              <p className="text-xs text-slate-400 py-4 text-center italic">No guest registries recorded</p>
+              <p className="text-xs text-slate-400 py-4 text-center italic">No guest recorded</p>
             ) : (
               <div className="flex flex-col divide-y divide-slate-100">
                 {recentRegistries.map((reg) => {
@@ -418,7 +418,7 @@ const SuperAdminDashboard = () => {
 
         {/* Registry health */}
         <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm">
-          <SectionTitle>Registry health</SectionTitle>
+          <SectionTitle>Guests Overview</SectionTitle>
           <div className="flex flex-col gap-4">
             <ProgressRow label="Submitted" count={submittedRegistries} total={totalRegistries} color="#166534" textColor="#166534" />
             <ProgressRow label="Draft" count={draftRegistries} total={totalRegistries} color="#c2a336" textColor="#854F0B" />
@@ -456,7 +456,7 @@ const SuperAdminDashboard = () => {
           {latestMedia && (
             <div className="mt-6 border-t border-slate-100 pt-4">
                <div className="bg-slate-50 p-3 rounded-xl border border-slate-100">
-                  <p className="text-[9px] font-black text-[#c2a336] uppercase tracking-widest mb-1">Latest Registry Entry</p>
+                  <p className="text-[9px] font-black text-[#c2a336] uppercase tracking-widest mb-1">Past Events Overview</p>
                   <p className="text-[11px] font-bold text-[#1a3a2a] truncate">{latestMedia.title}</p>
                   <p className="text-[9px] font-bold text-slate-400 mt-1 uppercase">
                     {formatDate(latestMedia.created_at)} · {latestMedia.file_type}

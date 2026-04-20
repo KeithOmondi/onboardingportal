@@ -1,22 +1,26 @@
 import { useState, useRef, useEffect } from "react";
-import { Bell, Search, UserCircle, Menu, Settings, LogOut, User } from "lucide-react";
+import { Bell, Search, UserCircle, Menu, Settings, LogOut, User, BellOff } from "lucide-react";
 import { useSelector, useDispatch } from "react-redux";
 import type { RootState, AppDispatch } from "../../redux/store";
 import { logout } from "../../redux/slices/authSlice";
 
 interface JudgeHeaderProps {
   onMenuToggle: () => void;
+  onEnableNotifications: () => Promise<void>;
 }
 
-const JudgeHeader = ({ onMenuToggle }: JudgeHeaderProps) => {
+const JudgeHeader = ({ onMenuToggle, onEnableNotifications }: JudgeHeaderProps) => {
   const dispatch = useDispatch<AppDispatch>();
   const { user } = useSelector((state: RootState) => state.auth);
   
-  // State for dropdown visibility
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
-  // Close dropdown when clicking outside
+  // Track permission state so the button hides once granted
+  const [notifPermission, setNotifPermission] = useState<NotificationPermission>(
+    "Notification" in window ? Notification.permission : "denied"
+  );
+
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
@@ -26,6 +30,13 @@ const JudgeHeader = ({ onMenuToggle }: JudgeHeaderProps) => {
     document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
+
+  const handleEnableNotifications = async () => {
+    await onEnableNotifications();
+    if ("Notification" in window) {
+      setNotifPermission(Notification.permission);
+    }
+  };
 
   const handleLogout = () => {
     dispatch(logout());
@@ -59,7 +70,7 @@ const JudgeHeader = ({ onMenuToggle }: JudgeHeaderProps) => {
         <div className="hidden md:flex items-center gap-2 pr-5 border-r border-white/15">
           <div className="w-2 h-2 rounded-full bg-[#C5A059] animate-pulse" />
           <span className="text-[10px] font-black text-white/50 uppercase tracking-widest">
-            
+            Secure Session Active
           </span>
         </div>
 
@@ -67,10 +78,21 @@ const JudgeHeader = ({ onMenuToggle }: JudgeHeaderProps) => {
           <Search size={20} />
         </button>
 
-        <button className="relative p-2 text-white/70 hover:text-white hover:bg-white/10 rounded-xl transition-colors">
-          <Bell size={20} />
-          <span className="absolute top-2 right-2 w-2 h-2 bg-[#C5A059] rounded-full border-2 border-[#355E3B]" />
-        </button>
+        {/* Bell — doubles as enable-notifications button when not yet granted */}
+        {notifPermission === "granted" ? (
+          <button className="relative p-2 text-white/70 hover:text-white hover:bg-white/10 rounded-xl transition-colors">
+            <Bell size={20} />
+            <span className="absolute top-2 right-2 w-2 h-2 bg-[#C5A059] rounded-full border-2 border-[#355E3B]" />
+          </button>
+        ) : (
+          <button
+            onClick={handleEnableNotifications}
+            title="Enable push notifications"
+            className="relative p-2 text-white/40 hover:text-white hover:bg-white/10 rounded-xl transition-colors"
+          >
+            <BellOff size={20} />
+          </button>
+        )}
 
         <div className="h-8 w-px bg-white/15 hidden sm:block" />
 
@@ -112,6 +134,17 @@ const JudgeHeader = ({ onMenuToggle }: JudgeHeaderProps) => {
                 <Settings size={18} className="text-gray-400" />
                 Account Settings
               </button>
+
+              {/* Enable notifications option in dropdown too */}
+              {notifPermission !== "granted" && (
+                <button
+                  onClick={handleEnableNotifications}
+                  className="w-full flex items-center gap-3 px-4 py-3 text-sm text-amber-600 hover:bg-amber-50 transition-colors"
+                >
+                  <Bell size={18} />
+                  Enable Notifications
+                </button>
+              )}
               
               <div className="h-px bg-gray-100 my-1" />
               
