@@ -104,6 +104,19 @@ export const deleteMyRegistry = createAsyncThunk(
   }
 );
 
+/** Delete a single guest by their ID */
+export const deleteGuest = createAsyncThunk(
+  "guests/deleteGuest",
+  async (guestId: number, { rejectWithValue }) => {
+    try {
+      await api.delete(`/guests/${guestId}`);
+      return guestId; // Return the ID so the reducer can splice it out locally
+    } catch (err) {
+      return rejectWithValue(getErrorMessage(err));
+    }
+  }
+);
+
 export const adminGetRegistryById = createAsyncThunk(
   "guests/adminGetOne",
   async (registrationId: number, { rejectWithValue }) => {
@@ -161,7 +174,7 @@ export const exportFullRegistryPDF = createAsyncThunk(
   }
 );
 
-// NEW: Bulk Excel Export
+// Bulk Excel Export
 export const exportFullRegistryExcel = createAsyncThunk(
   "guests/exportFullExcel",
   async (_, { rejectWithValue }) => {
@@ -176,7 +189,7 @@ export const exportFullRegistryExcel = createAsyncThunk(
   }
 );
 
-// NEW: Bulk Word Export
+// Bulk Word Export
 export const exportFullRegistryWord = createAsyncThunk(
   "guests/exportFullWord",
   async (_, { rejectWithValue }) => {
@@ -196,7 +209,7 @@ export const updateGuestDetail = createAsyncThunk(
   async ({ id, guestData }: { id: number; guestData: Partial<IGuest> }, { rejectWithValue }) => {
     try {
       const { data } = await api.patch(`/guests/update-guest/${id}`, guestData);
-      return data.data; // This returns the updated guest object from the server
+      return data.data;
     } catch (err) {
       return rejectWithValue(getErrorMessage(err));
     }
@@ -226,13 +239,13 @@ const guestSlice = createSlice({
 
     // Handle all Download/Export Thunks (Individual PDF, Bulk PDF, Excel, Word)
     const exportThunks = [
-      downloadGuestListPDF, 
-      exportFullRegistryPDF, 
-      exportFullRegistryExcel, 
-      exportFullRegistryWord
+      downloadGuestListPDF,
+      exportFullRegistryPDF,
+      exportFullRegistryExcel,
+      exportFullRegistryWord,
     ];
 
-    exportThunks.forEach(thunk => {
+    exportThunks.forEach((thunk) => {
       builder.addCase(thunk.pending, (state) => { state.loading = true; });
       builder.addCase(thunk.fulfilled, (state, action) => {
         state.loading = false;
@@ -251,16 +264,30 @@ const guestSlice = createSlice({
     builder.addCase(updateGuestDetail.fulfilled, (state, action) => {
       state.isSaving = false;
       const updatedGuest = action.payload;
-      
-      // Update the guest in the local list
-      const index = state.myRegistry.guests.findIndex(g => g.id === updatedGuest.id);
+      const index = state.myRegistry.guests.findIndex((g) => g.id === updatedGuest.id);
       if (index !== -1) {
         state.myRegistry.guests[index] = updatedGuest;
       }
-      
       state.message = "Guest updated successfully";
     });
     builder.addCase(updateGuestDetail.rejected, (state, action) => {
+      state.isSaving = false;
+      state.error = action.payload as string;
+    });
+
+    // Delete Single Guest
+    builder.addCase(deleteGuest.pending, (state) => {
+      state.isSaving = true;
+    });
+    builder.addCase(deleteGuest.fulfilled, (state, action) => {
+      state.isSaving = false;
+      // Splice the deleted guest out of local state — no refetch needed
+      state.myRegistry.guests = state.myRegistry.guests.filter(
+        (g) => g.id !== action.payload
+      );
+      state.message = "Guest removed successfully";
+    });
+    builder.addCase(deleteGuest.rejected, (state, action) => {
       state.isSaving = false;
       state.error = action.payload as string;
     });
@@ -288,9 +315,8 @@ const guestSlice = createSlice({
       state.isSaving = false;
       state.message = action.payload.message;
     });
-    builder.addCase(submitGuestRegistry.fulfilled, (state, action) => {
+    builder.addCase(submitGuestRegistry.fulfilled, (state) => {
       state.myRegistry.status = "SUBMITTED";
-      state.message = action.payload.message;
     });
     builder.addCase(deleteMyRegistry.fulfilled, (state) => {
       state.myRegistry = initialState.myRegistry;

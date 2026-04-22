@@ -9,7 +9,8 @@ import {
   Calendar, 
   FileSearch, 
   BookOpen, 
-  LayoutGrid 
+  LayoutGrid,
+  ShieldAlert 
 } from "lucide-react";
 import { format } from "date-fns";
 import type { IDocument } from "../../interfaces/documents.interface";
@@ -18,16 +19,44 @@ import ProgramFlipbook from "./ProgramFlipbook";
 
 const JudgesDocuments = () => {
   const dispatch = useAppDispatch();
-  
-  // 1. Get documents from existing slice
   const { documents, loading, success } = useAppSelector((state) => state.documents);
   
-  // Tab State: 'grid' or 'handbook'
   const [activeTab, setActiveTab] = useState<"grid" | "handbook">("grid");
-  
-  // 2. We only need to know WHICH document is selected to show the modal
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedDocument, setSelectedDocument] = useState<IDocument | null>(null);
+
+  /**
+   * SECURITY ENFORCEMENT
+   * Disables Context Menu, Print, and Common Save shortcuts.
+   */
+  useEffect(() => {
+    const preventActions = (e: KeyboardEvent) => {
+      // Disable Ctrl+P (Print), Ctrl+S (Save), Ctrl+U (View Source)
+      if (
+        (e.ctrlKey || e.metaKey) && 
+        (e.key === "p" || e.key === "s" || e.key === "u")
+      ) {
+        e.preventDefault();
+        alert("Action restricted: This document must remain within the system registry.");
+      }
+      
+      // Disable PrintScreen / Snipping Tool triggers (Best effort)
+      if (e.key === "PrintScreen") {
+        navigator.clipboard.writeText(""); // Clear clipboard
+        alert("Screenshots are disabled for judicial records.");
+      }
+    };
+
+    const preventContextMenu = (e: MouseEvent) => e.preventDefault();
+
+    window.addEventListener("keydown", preventActions);
+    window.addEventListener("contextmenu", preventContextMenu);
+
+    return () => {
+      window.removeEventListener("keydown", preventActions);
+      window.removeEventListener("contextmenu", preventContextMenu);
+    };
+  }, []);
 
   useEffect(() => {
     dispatch(fetchDocuments({ search: searchTerm }));
@@ -46,11 +75,34 @@ const JudgesDocuments = () => {
   }, [dispatch]);
 
   return (
-    <div className="p-6 max-w-7xl mx-auto bg-[#f9faf9] min-h-screen font-sans">
-      <div className="mb-8">
-        <h1 className="text-2xl font-bold font-serif text-[#1a3a32] border-b-4 border-[#c2a336] inline-block uppercase tracking-tight">
-          DOCUMENTS
-        </h1>
+    <div className="p-6 max-w-7xl mx-auto bg-[#f9faf9] min-h-screen font-sans select-none">
+      {/* CSS STYLES FOR SCREENSHOT PROTECTION 
+          - print:hidden: Hides everything if a user manages to open the print dialog.
+          - blur-on-focus: Optional: blurs content if the user switches apps.
+      */}
+      <style>{`
+        @media print {
+          body { display: none !important; }
+        }
+        .no-select {
+          -webkit-touch-callout: none;
+          -webkit-user-select: none;
+          -khtml-user-select: none;
+          -moz-user-select: none;
+          -ms-user-select: none;
+          user-select: none;
+        }
+      `}</style>
+
+      <div className="mb-8 flex justify-between items-end">
+        <div>
+          <h1 className="text-2xl font-bold font-serif text-[#1a3a32] border-b-4 border-[#c2a336] inline-block uppercase tracking-tight">
+            DOCUMENTS
+          </h1>
+          <p className="text-[10px] text-red-600 font-bold mt-2 flex items-center gap-1">
+            <ShieldAlert size={12} /> INTERNAL SYSTEM VIEW ONLY — UNAUTHORIZED DISTRIBUTION PROHIBITED
+          </p>
+        </div>
       </div>
 
       {/* TAB NAVIGATION */}
@@ -81,7 +133,6 @@ const JudgesDocuments = () => {
 
       {activeTab === "grid" ? (
         <>
-          {/* Search Bar */}
           <div className="mb-8 max-w-md">
             <div className="relative">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-[#c2a336]" size={18} />
@@ -95,7 +146,6 @@ const JudgesDocuments = () => {
             </div>
           </div>
 
-          {/* Document Grid */}
           {loading ? (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               {[1, 2, 3, 4].map((n) => (
@@ -108,7 +158,7 @@ const JudgesDocuments = () => {
               <p className="italic">No records match your current filter.</p>
             </div>
           ) : (
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 no-select">
               {documents.map((doc) => (
                 <div key={doc.id} className="bg-white border border-[#e2e8e4] rounded-2xl p-5 shadow-sm hover:shadow-md transition-shadow group flex gap-4 items-center">
                   <div className="flex-shrink-0 w-20 h-20 bg-[#e8ede9] rounded-xl flex items-center justify-center text-[#1a3a32]">
@@ -124,6 +174,7 @@ const JudgesDocuments = () => {
                         <button 
                           onClick={() => setSelectedDocument(doc)} 
                           className="p-1.5 text-[#5c7a6b] hover:text-[#c2a336]"
+                          title="View only"
                         >
                           <Eye size={18} />
                         </button>
@@ -149,8 +200,7 @@ const JudgesDocuments = () => {
           )}
         </>
       ) : (
-        /* FLIPBOOK VIEW */
-        <div className="bg-white rounded-2xl border border-[#e2e8e4] shadow-sm overflow-hidden">
+        <div className="bg-white rounded-2xl border border-[#e2e8e4] shadow-sm overflow-hidden no-select">
            <ProgramFlipbook />
         </div>
       )}

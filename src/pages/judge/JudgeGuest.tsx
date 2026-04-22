@@ -10,19 +10,22 @@ import {
   ShieldAlert,
   AlertCircle,
   X,
+  Pencil,
+  Check,
 } from "lucide-react";
 
 import {
+  deleteMyRegistry,
   getMyGuestRegistry,
   saveGuestDraft,
   submitGuestRegistry,
-} from "../../redux/slices/guestSlice"; // ← adjust path to your store
-import type { AppDispatch, RootState } from "../../redux/store"; // ← adjust path to your store
+  updateGuestDetail,
+} from "../../redux/slices/guestSlice";
+import type { AppDispatch, RootState } from "../../redux/store";
 import type { IGuest, GuestType, Gender } from "../../interfaces/guests.interface";
 
 /* =====================================================
     UI-ONLY HELPER TYPE
-    Adds a stable React key; never sent to the API.
 ===================================================== */
 interface IGuestWithUiId extends IGuest {
   uiId: string;
@@ -44,10 +47,10 @@ const createEmptyGuest = (): IGuestWithUiId => ({
   email: "",
 });
 
-/** Strip the UI-only key before sending to the API */
 const toApiGuest = (g: IGuestWithUiId): IGuest => {
-  const { uiId, ...rest } = g; // eslint-disable-line @typescript-eslint/no-unused-vars
-  return rest;
+  const result = { ...g } as Partial<IGuestWithUiId>;
+  delete result.uiId;
+  return result as IGuest;
 };
 
 /* =====================================================
@@ -56,139 +59,160 @@ const toApiGuest = (g: IGuestWithUiId): IGuest => {
 const JudgeGuest = () => {
   const dispatch = useDispatch<AppDispatch>();
 
-  // ── Slice state ──────────────────────────────────────
-  const {
-    myRegistry,
-    loading,
-    isSaving,
-  } = useSelector((state: RootState) => state.guests);
+  const { myRegistry, loading, isSaving } = useSelector(
+    (state: RootState) => state.guests
+  );
 
-  // ── Local UI state ───────────────────────────────────
-  // Lazy initialiser: if the store already has guests (e.g. hot-reload / StrictMode
-  // second pass), use them immediately — no effect needed.
+  // Seed from store in case it's already hydrated (e.g. Redux persist / StrictMode)
   const [guests, setGuests] = useState<IGuestWithUiId[]>(() =>
-    myRegistry.guests.length > 0
-      ? myRegistry.guests.map(toUiGuest)
-      : [createEmptyGuest()]
+    myRegistry.guests?.length > 0 ? myRegistry.guests.map(toUiGuest) : []
   );
   const [showConfirmModal, setShowConfirmModal] = useState(false);
 
-  // Track which registry is currently loaded so we only re-initialise when a
-  // *different* registry arrives (genuine external change), not on every render.
-  const [loadedRegistryId, setLoadedRegistryId] = useState<number | null>(
-    myRegistry.guests[0]?.registration_id ?? null
-  );
+  // The single form — used for both adding and editing
+  const [formData, setFormData] = useState<IGuestWithUiId>(createEmptyGuest());
+  // When non-null, we’re editing an existing guest
+  const [editingUiId, setEditingUiId] = useState<string | null>(null);
 
   /* =====================================================
-      BOOTSTRAP — load existing registry on mount
+      BOOTSTRAP
   ===================================================== */
   useEffect(() => {
     dispatch(getMyGuestRegistry())
       .unwrap()
       .then((data) => {
-        // Only hydrate local form state when we receive a registry we haven't
-        // loaded yet. This is a response to an *external* system (the API), so
-        // calling setState here is the correct pattern.
-        const incomingId: number | undefined = data?.id;
-        if (incomingId !== undefined && incomingId !== loadedRegistryId) {
-          setGuests(
-            data.guests.length > 0
-              ? data.guests.map(toUiGuest)
-              : [createEmptyGuest()]
-          );
-          setLoadedRegistryId(incomingId);
+        // Always hydrate from the API response — source of truth
+        if (data?.guests) {
+          setGuests(data.guests.length > 0 ? data.guests.map(toUiGuest) : []);
         }
       })
-      .catch(() => {
-        // 404 — no registry yet, keep the single empty row already in state
-      });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [dispatch]); // intentionally omit loadedRegistryId — we only want this on mount
+      .catch(() => {});
+  }, [dispatch]);
 
   /* =====================================================
-      VALIDATION
+      FORM FIELD HELPERS
   ===================================================== */
-  const validateGuests = (): boolean => {
+  const updateFormField = <K extends keyof IGuest>(field: K, value: IGuest[K]) => {
+    setFormData((prev) => ({ ...prev, [field]: value }));
+  };
+
+  const resetForm = () => {
+    setFormData(createEmptyGuest());
+    setEditingUiId(null);
+  };
+
+  /* =====================================================
+      FORM VALIDATION
+  ===================================================== */
+  const validateForm = (g: IGuestWithUiId): boolean => {
+    if (!g.name.trim()) { toast.error("Full Name is required"); return false; }
+    if (!g.gender) { toast.error("Gender is required"); return false; }
+
+    if (g.type === "ADULT") {
+      if (!g.id_number?.trim()) { toast.error("National ID / Passport is required"); return false; }
+      if (!g.phone?.trim()) { toast.error("Phone Number is required"); return false; }
+      if (!g.email?.trim()) { toast.error("Email Address is required"); return false; }
+      if (!/^\S+@\S+\.\S+$/.test(g.email ?? "")) { toast.error("Provide a valid email"); return false; }
+    } else {
+      if (!g.birth_cert_number?.trim()) { toast.error("Birth Certificate Number is required"); return false; }
+    }
+    return true;
+  };
+
+  const validateAllGuests = (): boolean => {
     for (let i = 0; i < guests.length; i++) {
       const g = guests[i];
       const label = `Guest #${i + 1}`;
-
-      if (!g.name.trim()) {
-        toast.error(`${label}: Full Name is required`);
-        return false;
-      }
-      if (!g.gender) {
-        toast.error(`${label}: Gender is required`);
-        return false;
-      }
-
+      if (!g.name.trim()) { toast.error(`${label}: Full Name is required`); return false; }
+      if (!g.gender) { toast.error(`${label}: Gender is required`); return false; }
       if (g.type === "ADULT") {
-        if (!g.id_number?.trim()) {
-          toast.error(`${label}: National ID / Passport is required`);
-          return false;
-        }
-        if (!g.phone?.trim()) {
-          toast.error(`${label}: Phone Number is required`);
-          return false;
-        }
-        if (!g.email?.trim()) {
-          toast.error(`${label}: Email Address is required`);
-          return false;
-        }
-        if (!/^\S+@\S+\.\S+$/.test(g.email)) {
-          toast.error(`${label}: Provide a valid email`);
-          return false;
-        }
+        if (!g.id_number?.trim()) { toast.error(`${label}: ID / Passport required`); return false; }
+        if (!g.phone?.trim()) { toast.error(`${label}: Phone required`); return false; }
+        if (!g.email?.trim()) { toast.error(`${label}: Email required`); return false; }
+        if (!/^\S+@\S+\.\S+$/.test(g.email ?? "")) { toast.error(`${label}: Valid email required`); return false; }
       } else {
-        if (!g.birth_cert_number?.trim()) {
-          toast.error(`${label}: Birth Certificate Number is required`);
-          return false;
-        }
+        if (!g.birth_cert_number?.trim()) { toast.error(`${label}: Birth Cert required`); return false; }
       }
     }
     return true;
   };
 
   /* =====================================================
-      HANDLERS
+      ADD / EDIT / DELETE HANDLERS
   ===================================================== */
-  const addGuestHandler = () => {
-    if (guests.length < 5) {
-      setGuests((prev) => [...prev, createEmptyGuest()]);
-      toast.success("New guest row added.");
+  const handleAddOrUpdate = () => {
+    if (!validateForm(formData)) return;
+
+    if (editingUiId) {
+      const persisted = guests.find((g) => g.uiId === editingUiId);
+
+      if (persisted?.id) {
+        // Guest exists in DB — dispatch a PATCH to keep the server in sync
+        dispatch(updateGuestDetail({ id: persisted.id, guestData: toApiGuest(formData) }))
+          .unwrap()
+          .then((updated) => {
+            setGuests((prev) =>
+              prev.map((g) => (g.uiId === editingUiId ? { ...toUiGuest(updated), uiId: editingUiId } : g))
+            );
+            toast.success("Guest updated.");
+          })
+          .catch((err: string) => toast.error(err));
+      } else {
+        // Unsaved guest — update locally only
+        setGuests((prev) =>
+          prev.map((g) => (g.uiId === editingUiId ? { ...formData, uiId: editingUiId } : g))
+        );
+        toast.success("Guest updated.");
+      }
     } else {
-      toast.error("Maximum allocation (5) reached.");
+      if (guests.length >= 5) { toast.error("Maximum allocation (5) reached."); return; }
+      setGuests((prev) => [...prev, { ...formData, uiId: crypto.randomUUID() }]);
+      toast.success("Guest added.");
     }
+    resetForm();
   };
 
-  const removeGuest = (uiId: string) => {
-    if (guests.length > 1) {
-      setGuests((prev) => prev.filter((g) => g.uiId !== uiId));
-      toast.success("Guest row removed.");
-    }
+  const handleEditGuest = (g: IGuestWithUiId) => {
+    setFormData({ ...g });
+    setEditingUiId(g.uiId);
+    window.scrollTo({ top: 0, behavior: "smooth" });
   };
 
-  const updateField = <K extends keyof IGuest>(
-    uiId: string,
-    field: K,
-    value: IGuest[K]
-  ) => {
-    setGuests((prev) =>
-      prev.map((g) => (g.uiId === uiId ? { ...g, [field]: value } : g))
-    );
-  };
+ const handleDeleteGuest = (uiId: string) => {
+  const target = guests.find((g) => g.uiId === uiId);
+  const remaining = guests.filter((g) => g.uiId !== uiId);
 
-  const handleSaveDraft = async () => {
+  if (target?.id) {
+    // Delete the whole registry then re-save with the remaining guests
+    dispatch(deleteMyRegistry())
+      .unwrap()
+      .then(() => dispatch(saveGuestDraft(remaining.map(toApiGuest))).unwrap())
+      .then(() => {
+        setGuests(remaining);
+        if (editingUiId === uiId) resetForm();
+        toast.success("Guest removed.");
+      })
+      .catch((err: string) => toast.error(err));
+  } else {
+    // Unsaved guest — remove locally only, no API call needed
+    setGuests(remaining);
+    if (editingUiId === uiId) resetForm();
+    toast.success("Guest removed.");
+  }
+};
+
+  /* =====================================================
+      SAVE / SUBMIT HANDLERS
+  ===================================================== */
+  const handleSaveDraft = () => {
     dispatch(saveGuestDraft(guests.map(toApiGuest)))
       .unwrap()
       .then(() => toast.success("Changes saved to local registry."))
       .catch((err: string) => toast.error(err));
   };
 
-  const handleFinalSubmit = async () => {
+  const handleFinalSubmit = () => {
     setShowConfirmModal(false);
-
-    // Persist the current form state first, then submit
     dispatch(saveGuestDraft(guests.map(toApiGuest)))
       .unwrap()
       .then(() => dispatch(submitGuestRegistry()).unwrap())
@@ -209,13 +233,11 @@ const JudgeGuest = () => {
     <div className="max-w-5xl mx-auto space-y-8 p-8">
       <Toaster position="top-right" />
 
-      {/* ── LOADING SKELETON ── */}
+      {/* ── LOADING ── */}
       {loading && guests.length === 0 && (
         <div className="flex items-center justify-center py-20 text-slate-400 gap-3">
           <Loader2 className="animate-spin" size={20} />
-          <span className="text-sm font-bold uppercase tracking-widest">
-            Loading registry…
-          </span>
+          <span className="text-sm font-bold uppercase tracking-widest">Loading registry…</span>
         </div>
       )}
 
@@ -230,7 +252,6 @@ const JudgeGuest = () => {
             >
               <X size={20} />
             </button>
-
             <div className="flex flex-col items-center text-center space-y-6">
               <div className="bg-amber-50 p-4 rounded-full text-amber-600">
                 <AlertCircle size={48} />
@@ -279,8 +300,7 @@ const JudgeGuest = () => {
           </h2>
           <p className="text-slate-600 text-sm leading-relaxed">
             You may register up to{" "}
-            <span className="font-bold text-slate-900">5 guests</span>. Ensure
-            names match their official Identification Documents.
+            <span className="font-bold text-slate-900">5 guests</span>. Ensure names match their official Identification Documents.
           </p>
         </div>
       </div>
@@ -303,8 +323,7 @@ const JudgeGuest = () => {
             </span>
             {myRegistry.updatedAt && (
               <span className="text-[10px] text-slate-400 font-medium">
-                Last saved{" "}
-                {new Date(myRegistry.updatedAt).toLocaleString()}
+                Last saved {new Date(myRegistry.updatedAt).toLocaleString()}
               </span>
             )}
           </div>
@@ -314,133 +333,228 @@ const JudgeGuest = () => {
         </p>
       </div>
 
-      {/* ── GUEST FORMS ── */}
-      <div className="space-y-6">
-        {guests.map((guest, index) => (
-          <div
-            key={guest.uiId}
-            className="bg-white border border-slate-200 rounded-[2rem] p-8 shadow-sm hover:shadow-md transition-all"
-          >
-            <div className="flex justify-between items-center mb-8">
-              <span className="flex items-center justify-center w-8 h-8 rounded-full bg-[#1a3a32] text-white text-xs font-black">
-                {index + 1}
-              </span>
-              <button
-                onClick={() => removeGuest(guest.uiId)}
-                className="text-slate-300 hover:text-red-500 transition-colors"
-                aria-label={`Remove guest ${index + 1}`}
-              >
-                <Trash2 size={20} />
-              </button>
-            </div>
+      {/* ── SINGLE GUEST FORM ── */}
+      <div className="bg-white border border-slate-200 rounded-[2rem] p-8 shadow-sm">
+        <h2 className="text-[11px] font-black uppercase tracking-[0.25em] text-[#1a3a32] mb-6">
+          {editingUiId ? "✏️ Editing Guest" : "Add a Guest"}
+        </h2>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-              <Input
-                label="Full Name"
-                required
-                value={guest.name}
-                onChange={(v) => updateField(guest.uiId, "name", v)}
-              />
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+          <Input
+            label="Full Name"
+            required
+            value={formData.name}
+            onChange={(v) => updateFormField("name", v)}
+          />
 
-              <div className="space-y-1">
-                <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">
-                  Classification <span className="text-red-500">*</span>
-                </label>
-                <div className="flex gap-2">
-                  {(["ADULT", "MINOR"] as GuestType[]).map((t) => (
-                    <Toggle
-                      key={t}
-                      active={guest.type === t}
-                      label={t}
-                      onClick={() => updateField(guest.uiId, "type", t)}
-                    />
-                  ))}
-                </div>
-              </div>
-
-              <Select
-                label="Gender"
-                required
-                value={guest.gender}
-                options={["MALE", "FEMALE", "OTHER"]}
-                onChange={(v) => updateField(guest.uiId, "gender", v as Gender)}
-              />
-
-              {guest.type === "ADULT" ? (
-                <>
-                  <Input
-                    label="ID / Passport"
-                    required
-                    value={guest.id_number ?? ""}
-                    onChange={(v) => updateField(guest.uiId, "id_number", v)}
-                  />
-                  <Input
-                    label="Phone Number"
-                    required
-                    value={guest.phone ?? ""}
-                    onChange={(v) => updateField(guest.uiId, "phone", v)}
-                  />
-                  <Input
-                    label="Email Address"
-                    required
-                    value={guest.email ?? ""}
-                    onChange={(v) => updateField(guest.uiId, "email", v)}
-                  />
-                </>
-              ) : (
-                <>
-                  <Input
-                    label="Birth Cert Number"
-                    required
-                    value={guest.birth_cert_number ?? ""}
-                    onChange={(v) =>
-                      updateField(guest.uiId, "birth_cert_number", v)
-                    }
-                  />
-                  <Input
-                    label="Guardian Phone (Optional)"
-                    value={guest.phone ?? ""}
-                    onChange={(v) => updateField(guest.uiId, "phone", v)}
-                  />
-                </>
-              )}
+          <div className="space-y-1">
+            <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">
+              Classification <span className="text-red-500">*</span>
+            </label>
+            <div className="flex gap-2">
+              {(["ADULT", "MINOR"] as GuestType[]).map((t) => (
+                <Toggle
+                  key={t}
+                  active={formData.type === t}
+                  label={t}
+                  onClick={() => updateFormField("type", t)}
+                />
+              ))}
             </div>
           </div>
-        ))}
+
+          <Select
+            label="Gender"
+            required
+            value={formData.gender}
+            options={["MALE", "FEMALE", "OTHER"]}
+            onChange={(v) => updateFormField("gender", v as Gender)}
+          />
+
+          {formData.type === "ADULT" ? (
+            <>
+              <Input
+                label="ID / Passport"
+                required
+                value={formData.id_number ?? ""}
+                onChange={(v) => updateFormField("id_number", v)}
+              />
+              <Input
+                label="Phone Number"
+                required
+                value={formData.phone ?? ""}
+                onChange={(v) => updateFormField("phone", v)}
+              />
+              <Input
+                label="Email Address"
+                required
+                value={formData.email ?? ""}
+                onChange={(v) => updateFormField("email", v)}
+              />
+            </>
+          ) : (
+            <>
+              <Input
+                label="Birth Cert Number"
+                required
+                value={formData.birth_cert_number ?? ""}
+                onChange={(v) => updateFormField("birth_cert_number", v)}
+              />
+              <Input
+                label="Guardian Phone (Optional)"
+                value={formData.phone ?? ""}
+                onChange={(v) => updateFormField("phone", v)}
+              />
+            </>
+          )}
+        </div>
+
+        {/* Form action buttons */}
+        <div className="flex items-center gap-4 mt-8 pt-6 border-t border-slate-100">
+          <button
+            onClick={handleAddOrUpdate}
+            disabled={(guests.length >= 5 && !editingUiId) || busy}
+            className="flex items-center gap-2 px-8 py-4 bg-[#1a3a32] text-white rounded-2xl text-[10px] font-black uppercase tracking-widest hover:bg-[#142d27] shadow-lg shadow-emerald-900/20 transition-all disabled:opacity-50"
+          >
+            {editingUiId ? (
+              <><Check size={14} /> Save Changes</>
+            ) : (
+              <><UserPlus size={14} /> Add Guest</>
+            )}
+          </button>
+
+          {editingUiId && (
+            <button
+              onClick={resetForm}
+              className="flex items-center gap-2 px-6 py-4 border border-slate-200 rounded-2xl text-[10px] font-black uppercase tracking-widest text-slate-500 hover:bg-slate-50 transition-all"
+            >
+              <X size={14} /> Cancel Edit
+            </button>
+          )}
+        </div>
       </div>
 
-      {/* ── FOOTER ACTIONS ── */}
-      <div className="flex flex-col md:flex-row justify-between items-center gap-6 pt-8 border-t border-slate-100">
-        <button
-          onClick={addGuestHandler}
-          disabled={guests.length >= 5 || busy}
-          className="flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-[#1a3a32] disabled:opacity-30 hover:underline underline-offset-8 transition-all"
-        >
-          <UserPlus size={16} /> Add Another Guest
-        </button>
+      {/* ── GUESTS TABLE ── */}
+      {guests.length > 0 && (
+        <div className="bg-white border border-slate-200 rounded-[2rem] overflow-hidden shadow-sm">
+          <div className="px-8 py-5 border-b border-slate-100 flex items-center justify-between">
+            <h2 className="text-[11px] font-black uppercase tracking-[0.25em] text-[#1a3a32]">
+              Registered Guests
+            </h2>
+            <span className="text-[10px] font-bold text-slate-400 bg-slate-50 px-3 py-1 rounded-full border border-slate-100">
+              {guests.length} of 5
+            </span>
+          </div>
 
-        <div className="flex gap-4">
-          <button
-            onClick={handleSaveDraft}
-            disabled={busy}
-            className="px-8 py-4 border border-slate-200 rounded-2xl text-[10px] font-black uppercase tracking-widest hover:bg-slate-50 flex items-center gap-2 transition-all disabled:opacity-50"
-          >
-            {isSaving ? (
-              <Loader2 className="animate-spin" size={14} />
-            ) : (
-              <Save size={14} />
-            )}
-            Save Draft
-          </button>
-          <button
-            onClick={() => validateGuests() && setShowConfirmModal(true)}
-            disabled={busy}
-            className="px-10 py-4 bg-[#1a3a32] text-white rounded-2xl text-[10px] font-black uppercase tracking-widest hover:bg-[#142d27] shadow-lg shadow-emerald-900/20 flex items-center gap-2 transition-all disabled:opacity-50"
-          >
-            {status === "SUBMITTED" ? "Update Registration" : "Finalize Registry"}{" "}
-            <ArrowRight size={14} />
-          </button>
+          <div className="overflow-x-auto">
+            <table className="w-full text-left">
+              <thead>
+                <tr className="bg-slate-50 border-b border-slate-100">
+                  <th className="px-6 py-4 text-[10px] font-black uppercase tracking-widest text-slate-400">#</th>
+                  <th className="px-6 py-4 text-[10px] font-black uppercase tracking-widest text-slate-400">Name</th>
+                  <th className="px-6 py-4 text-[10px] font-black uppercase tracking-widest text-slate-400">Type</th>
+                  <th className="px-6 py-4 text-[10px] font-black uppercase tracking-widest text-slate-400">Gender</th>
+                  <th className="px-6 py-4 text-[10px] font-black uppercase tracking-widest text-slate-400">ID / Cert</th>
+                  <th className="px-6 py-4 text-[10px] font-black uppercase tracking-widest text-slate-400">Phone</th>
+                  <th className="px-6 py-4 text-[10px] font-black uppercase tracking-widest text-slate-400">Email</th>
+                  <th className="px-6 py-4 text-[10px] font-black uppercase tracking-widest text-slate-400 text-right">Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {guests.map((g, index) => (
+                  <tr
+                    key={g.uiId}
+                    className={`border-b border-slate-50 transition-colors ${
+                      editingUiId === g.uiId
+                        ? "bg-amber-50/60"
+                        : "hover:bg-slate-50/60"
+                    }`}
+                  >
+                    <td className="px-6 py-4">
+                      <span className="flex items-center justify-center w-6 h-6 rounded-full bg-[#1a3a32] text-white text-[10px] font-black">
+                        {index + 1}
+                      </span>
+                    </td>
+                    <td className="px-6 py-4">
+                      <span className="text-xs font-bold text-slate-800">{g.name || "—"}</span>
+                    </td>
+                    <td className="px-6 py-4">
+                      <span
+                        className={`text-[10px] font-black uppercase tracking-widest px-2.5 py-1 rounded-full ${
+                          g.type === "ADULT"
+                            ? "bg-[#1a3a32]/10 text-[#1a3a32]"
+                            : "bg-blue-50 text-blue-700"
+                        }`}
+                      >
+                        {g.type}
+                      </span>
+                    </td>
+                    <td className="px-6 py-4">
+                      <span className="text-xs font-semibold text-slate-500">{g.gender}</span>
+                    </td>
+                    <td className="px-6 py-4">
+                      <span className="text-xs font-mono text-slate-600">
+                        {g.type === "ADULT"
+                          ? g.id_number || "—"
+                          : g.birth_cert_number || "—"}
+                      </span>
+                    </td>
+                    <td className="px-6 py-4">
+                      <span className="text-xs text-slate-500">{g.phone || "—"}</span>
+                    </td>
+                    <td className="px-6 py-4">
+                      <span className="text-xs text-slate-500">{g.email || "—"}</span>
+                    </td>
+                    <td className="px-6 py-4">
+                      <div className="flex items-center justify-end gap-2">
+                        <button
+                          onClick={() => handleEditGuest(g)}
+                          disabled={busy}
+                          className="flex items-center gap-1.5 px-3 py-2 text-[10px] font-black uppercase tracking-widest text-[#1a3a32] border border-[#1a3a32]/20 rounded-xl hover:bg-[#1a3a32]/5 transition-all disabled:opacity-40"
+                          aria-label={`Edit guest ${index + 1}`}
+                        >
+                          <Pencil size={12} /> Edit
+                        </button>
+                        <button
+                          onClick={() => handleDeleteGuest(g.uiId)}
+                          disabled={busy}
+                          className="flex items-center gap-1.5 px-3 py-2 text-[10px] font-black uppercase tracking-widest text-red-500 border border-red-100 rounded-xl hover:bg-red-50 transition-all disabled:opacity-40"
+                          aria-label={`Delete guest ${index + 1}`}
+                        >
+                          <Trash2 size={12} /> Delete
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
+      )}
+
+      {/* ── FOOTER ACTIONS ── */}
+      <div className="flex flex-col md:flex-row justify-end items-center gap-4 pt-8 border-t border-slate-100">
+        <button
+          onClick={handleSaveDraft}
+          disabled={busy || guests.length === 0}
+          className="px-8 py-4 border border-slate-200 rounded-2xl text-[10px] font-black uppercase tracking-widest hover:bg-slate-50 flex items-center gap-2 transition-all disabled:opacity-50"
+        >
+          {isSaving ? (
+            <Loader2 className="animate-spin" size={14} />
+          ) : (
+            <Save size={14} />
+          )}
+          Save Draft
+        </button>
+        <button
+          onClick={() => validateAllGuests() && setShowConfirmModal(true)}
+          disabled={busy || guests.length === 0}
+          className="px-10 py-4 bg-[#1a3a32] text-white rounded-2xl text-[10px] font-black uppercase tracking-widest hover:bg-[#142d27] shadow-lg shadow-emerald-900/20 flex items-center gap-2 transition-all disabled:opacity-50"
+        >
+          {status === "SUBMITTED" ? "Update Registration" : "Finalize Registry"}{" "}
+          <ArrowRight size={14} />
+        </button>
       </div>
     </div>
   );
@@ -490,13 +604,9 @@ const Select = ({ label, value, required, options, onChange }: SelectProps) => (
       onChange={(e) => onChange(e.target.value)}
       className="w-full px-5 py-4 bg-slate-50 border border-slate-100 rounded-2xl text-xs font-bold outline-none ring-[#b48222]/20 focus:ring-2 appearance-none"
     >
-      <option value="" disabled>
-        Select...
-      </option>
+      <option value="" disabled>Select...</option>
       {options.map((opt) => (
-        <option key={opt} value={opt}>
-          {opt}
-        </option>
+        <option key={opt} value={opt}>{opt}</option>
       ))}
     </select>
   </div>
