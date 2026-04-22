@@ -1,4 +1,5 @@
 // src/interfaces/guests.interface.ts
+// src/interfaces/guests.interface.ts
 
 export type GuestType = "ADULT" | "MINOR";
 export type Gender = "MALE" | "FEMALE" | "OTHER";
@@ -14,6 +15,10 @@ export interface IGuest {
   birth_cert_number: string | null;
   phone: string | null;
   email: string | null;
+  // --- New Independent Emergency Fields ---
+  emergency_note?: string | null;
+  emergency_note_at?: string | null;
+  // ---------------------------------------
   created_at?: string;
 }
 

@@ -6,13 +6,10 @@ import { getMyGuestRegistry } from "../../redux/slices/guestSlice";
 import { useChat } from "../../hooks/useChat";
 import type { IJudicialEvent } from "../../interfaces/events.interface";
 import type { INotice } from "../../interfaces/notices.interface";
+import JudgesNotifications from "./JudgesNotifications";
 
-// ── Helpers ───────────────────────────────────────────────────────────
+// ── Helpers ───────────────────────────────────────────────────────────────────
 
-/**
- * FIXED: Removed 'timeZone: UTC' to ensure the display matches the 
- * local time zone calculation used in deriveEventStatus.
- */
 const formatDate = (dateStr: string | Date) =>
   new Date(dateStr).toLocaleDateString("en-KE", {
     day: "2-digit",
@@ -21,11 +18,13 @@ const formatDate = (dateStr: string | Date) =>
   });
 
 const formatTime = (dateStr: string | Date) =>
-  new Date(dateStr).toLocaleTimeString("en-GB", {
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: true,
-  }).toUpperCase();
+  new Date(dateStr)
+    .toLocaleTimeString("en-GB", {
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: true,
+    })
+    .toUpperCase();
 
 const timeAgo = (dateStr: string | Date) => {
   const diff = Date.now() - new Date(dateStr).getTime();
@@ -38,10 +37,9 @@ const timeAgo = (dateStr: string | Date) => {
 const deriveEventStatus = (
   event: IJudicialEvent
 ): "UPCOMING" | "ONGOING" | "PAST" => {
-  const now = new Date().getTime();
+  const now   = new Date().getTime();
   const start = new Date(event.start_time).getTime();
-  const end = new Date(event.end_time).getTime();
-
+  const end   = new Date(event.end_time).getTime();
   if (now < start) return "UPCOMING";
   if (now >= start && now <= end) return "ONGOING";
   return "PAST";
@@ -83,8 +81,8 @@ const EventStatusBadge = ({
 }) => {
   const map = {
     UPCOMING: { bg: "#e1e8e5", text: "#1a3a32", label: "Upcoming" },
-    ONGOING: { bg: "#c2a336", text: "#ffffff", label: "Ongoing" },
-    PAST: { bg: "#f1f1f1", text: "#7d7d7d", label: "Past" },
+    ONGOING:  { bg: "#c2a336", text: "#ffffff",  label: "Ongoing"  },
+    PAST:     { bg: "#f1f1f1", text: "#7d7d7d",  label: "Past"     },
   } as const;
   const s = map[status];
   return (
@@ -99,10 +97,10 @@ const EventStatusBadge = ({
 
 const NoticeCategoryBadge = ({ category }: { category: string }) => {
   const map: Record<string, { bg: string; text: string }> = {
-    URGENT: { bg: "#7a1a1a", text: "#ffffff" },
+    URGENT:   { bg: "#7a1a1a", text: "#ffffff" },
     DEADLINE: { bg: "#c2a336", text: "#ffffff" },
-    INFO: { bg: "#1a3a32", text: "#ffffff" },
-    WELCOME: { bg: "#25443c", text: "#ffffff" },
+    INFO:     { bg: "#1a3a32", text: "#ffffff" },
+    WELCOME:  { bg: "#25443c", text: "#ffffff" },
   };
   const s = map[category] ?? { bg: "#f1f1f1", text: "#1a3a32" };
   return (
@@ -118,7 +116,7 @@ const NoticeCategoryBadge = ({ category }: { category: string }) => {
 const RegistryStatusBadge = ({ status }: { status: string }) => {
   const map: Record<string, { bg: string; text: string }> = {
     SUBMITTED: { bg: "#1a3a32", text: "#ffffff" },
-    DRAFT: { bg: "#f2f4f2", text: "#c2a336" },
+    DRAFT:     { bg: "#f2f4f2", text: "#c2a336" },
   };
   const s = map[status.toUpperCase()] ?? { bg: "#f1f1f1", text: "#7d7d7d" };
   return (
@@ -164,7 +162,8 @@ const ProgressRow = ({
 );
 
 const guestInitial = (name: string) => name.trim().charAt(0).toUpperCase();
-const genderLabel = (gender: string) => gender.charAt(0) + gender.slice(1).toLowerCase();
+const genderLabel  = (gender: string) =>
+  gender.charAt(0) + gender.slice(1).toLowerCase();
 
 // ── Main Component ────────────────────────────────────────────────────────────
 
@@ -174,35 +173,38 @@ const JudgeDashboard = () => {
   // Selectors
   const { user } = useAppSelector((state) => state.auth);
   const events = useAppSelector(selectAllEvents);
-  const { loading: eventsLoading } = useAppSelector((state) => state.events);
-  const { notices, unreadCount: unreadNotices, loading: noticesLoading } = useAppSelector((state) => state.notices);
-  const { myRegistry, loading: guestsLoading } = useAppSelector((state) => state.guests);
-  const { messages, broadcastMessages, unreadCount: unreadMessages, connected, loading: chatLoading } = useChat();
+  const { loading: eventsLoading }   = useAppSelector((state) => state.events);
+  const { notices, unreadCount: unreadNotices, loading: noticesLoading } =
+    useAppSelector((state) => state.notices);
+  const { myRegistry, loading: guestsLoading } = useAppSelector(
+    (state) => state.guests
+  );
+  const {
+    messages,
+    broadcastMessages,
+    unreadCount: unreadMessages,
+    connected,
+    loading: chatLoading,
+  } = useChat();
 
   useEffect(() => {
     dispatch(fetchEvents("ALL"));
     dispatch(fetchNotices());
     dispatch(getMyGuestRegistry());
+    // Note: We no longer need to wait for registries to show the emergency broadcast
   }, [dispatch]);
 
-  // ── Unified Live Status Logic ───────────────────────────────────────────────
+  // ── Derived: events ───────────────────────────────────────────────────────
 
-  /**
-   * RE-CALCULATED LIVE STATUS: 
-   * This ensures the frontend is the source of truth for "Ongoing" 
-   * based on the judge's actual browser time.
-   */
-  const eventsWithLiveStatus = useMemo(() => {
-    return events.map(event => ({
-      ...event,
-      liveStatus: deriveEventStatus(event)
-    }));
-  }, [events]);
+  const eventsWithLiveStatus = useMemo(
+    () => events.map((event) => ({ ...event, liveStatus: deriveEventStatus(event) })),
+    [events]
+  );
 
-  const totalEvents = eventsWithLiveStatus.length;
-  const upcomingCount = eventsWithLiveStatus.filter(e => e.liveStatus === "UPCOMING").length;
-  const ongoingCount = eventsWithLiveStatus.filter(e => e.liveStatus === "ONGOING").length;
-  const pastCount = eventsWithLiveStatus.filter(e => e.liveStatus === "PAST").length;
+  const totalEvents    = eventsWithLiveStatus.length;
+  const upcomingCount  = eventsWithLiveStatus.filter((e) => e.liveStatus === "UPCOMING").length;
+  const ongoingCount   = eventsWithLiveStatus.filter((e) => e.liveStatus === "ONGOING").length;
+  const pastCount      = eventsWithLiveStatus.filter((e) => e.liveStatus === "PAST").length;
 
   const upcomingEventsPreview = [...eventsWithLiveStatus]
     .filter((e) => e.liveStatus !== "PAST")
@@ -216,30 +218,44 @@ const JudgeDashboard = () => {
     })
     .slice(0, 5);
 
-  const guestCount = myRegistry.guests.length;
+  const guestCount    = myRegistry.guests.length;
   const totalMessages = messages.length + broadcastMessages.length;
-  const loading = eventsLoading || noticesLoading || guestsLoading || chatLoading;
+  const loading       = eventsLoading || noticesLoading || guestsLoading || chatLoading;
 
-  const hour = new Date().getHours();
-  const greeting = hour < 12 ? "Good morning" : hour < 17 ? "Good afternoon" : "Good evening";
+  const hour        = new Date().getHours();
+  const greeting    = hour < 12 ? "Good morning" : hour < 17 ? "Good afternoon" : "Good evening";
   const displayName = user?.full_name ?? "Judge";
+
+  // ── Render ────────────────────────────────────────────────────────────────
 
   return (
     <div className="p-4 md:p-6 max-w-6xl mx-auto bg-[#f9faf9]">
-      {/* Header */}
+
+      {/* ── Header ── */}
       <div className="mb-6 flex justify-between items-start">
         <div>
-          <p className="text-sm font-medium text-[#c2a336]">{greeting}, {displayName}</p>
+          <p className="text-sm font-medium text-[#c2a336]">
+            {greeting}, {displayName}
+          </p>
           <h1 className="text-3xl font-bold text-[#1a3a32] mt-0.5 border-b-2 border-[#c2a336] inline-block pr-8">
             Dashboard
           </h1>
         </div>
         <div className="flex items-center gap-2 px-3 py-1 bg-white border border-[#e2e8e4] rounded-full shadow-sm">
-          <div className={`w-2 h-2 rounded-full ${connected ? "bg-emerald-500 animate-pulse" : "bg-red-400"}`} />
+          <div
+            className={`w-2 h-2 rounded-full ${
+              connected ? "bg-emerald-500 animate-pulse" : "bg-red-400"
+            }`}
+          />
           <span className="text-[10px] font-bold text-[#1a3a32] uppercase tracking-tighter">
             {connected ? "Securely Connected" : "Offline"}
           </span>
         </div>
+      </div>
+
+      {/* ── Emergency Notice — Decoupled from registrationId so it always shows ── */}
+      <div className="mb-6">
+        <JudgesNotifications />
       </div>
 
       {loading && (
@@ -248,40 +264,64 @@ const JudgeDashboard = () => {
         </p>
       )}
 
-      {/* Metrics */}
+      {/* ── Metric cards ── */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-        <MetricCard 
-            label="Upcoming Events" 
-            value={upcomingCount} 
-            sub={ongoingCount > 0 ? `${ongoingCount} ongoing now` : "Scheduled Sessions"} 
-            valueColor="#c2a336" 
+        <MetricCard
+          label="Upcoming Events"
+          value={upcomingCount}
+          sub={ongoingCount > 0 ? `${ongoingCount} ongoing now` : "Scheduled Sessions"}
+          valueColor="#c2a336"
         />
-        <MetricCard label="Unread Notices" value={unreadNotices} sub={`of ${notices.length} total updates`} valueColor={unreadNotices > 0 ? "#7a1a1a" : "#1a3a32"} />
-        <MetricCard label="Unread Messages" value={unreadMessages} sub={`of ${totalMessages} total message${totalMessages !== 1 ? "s" : ""}`} valueColor={unreadMessages > 0 ? "#7a1a1a" : "#1a3a32"} />
-        <MetricCard label="Guest Registry" value={guestCount} sub={myRegistry.status} valueColor="#25443c" />
+        <MetricCard
+          label="Unread Notices"
+          value={unreadNotices}
+          sub={`of ${notices.length} total updates`}
+          valueColor={unreadNotices > 0 ? "#7a1a1a" : "#1a3a32"}
+        />
+        <MetricCard
+          label="Unread Messages"
+          value={unreadMessages}
+          sub={`of ${totalMessages} total message${totalMessages !== 1 ? "s" : ""}`}
+          valueColor={unreadMessages > 0 ? "#7a1a1a" : "#1a3a32"}
+        />
+        <MetricCard
+          label="Guest Registry"
+          value={guestCount}
+          sub={myRegistry.status}
+          valueColor="#25443c"
+        />
       </div>
 
+      {/* ── Events + Notices ── */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
-        {/* Upcoming Events List */}
+        {/* Upcoming Events */}
         <div className="bg-white border border-[#e2e8e4] rounded-xl p-5 shadow-sm">
           <p className="text-[12px] font-bold text-[#1a3a32] uppercase tracking-widest mb-4 flex items-center gap-2">
             <span className="w-2 h-4 bg-[#c2a336] rounded-sm" />
             Upcoming Events
           </p>
           {upcomingEventsPreview.length === 0 ? (
-            <p className="text-xs text-[#5c7a6b] py-4 text-center italic">No upcoming judicial events scheduled.</p>
+            <p className="text-xs text-[#5c7a6b] py-4 text-center italic">
+              No upcoming judicial events scheduled.
+            </p>
           ) : (
             <div className="flex flex-col divide-y divide-[#f2f4f2]">
               {upcomingEventsPreview.map((event) => (
-                <div key={event.id} className="flex items-center justify-between py-3.5 gap-3">
+                <div
+                  key={event.id}
+                  className="flex items-center justify-between py-3.5 gap-3"
+                >
                   <div className="min-w-0">
-                    <p className="text-sm font-bold text-[#1a3a32] truncate">{event.title}</p>
+                    <p className="text-sm font-bold text-[#1a3a32] truncate">
+                      {event.title}
+                    </p>
                     <p className="text-[11px] text-[#5c7a6b] mt-0.5 font-medium">
                       {formatDate(event.start_time)} · {formatTime(event.start_time)}
                     </p>
                     {event.location && (
                       <p className="text-[10px] text-[#c2a336] font-semibold mt-0.5 truncate italic">
-                        {event.is_virtual ? "Virtual Session · " : ""}{event.location}
+                        {event.is_virtual ? "Virtual Session · " : ""}
+                        {event.location}
                       </p>
                     )}
                   </div>
@@ -292,27 +332,41 @@ const JudgeDashboard = () => {
           )}
         </div>
 
-        {/* Notices */}
+        {/* Recent Notices */}
         <div className="bg-white border border-[#e2e8e4] rounded-xl p-5 shadow-sm">
           <p className="text-[12px] font-bold text-[#1a3a32] uppercase tracking-widest mb-4 flex items-center gap-2">
             <span className="w-2 h-4 bg-[#1a3a32] rounded-sm" />
             Recent Notices
           </p>
           {recentNotices.length === 0 ? (
-            <p className="text-xs text-[#5c7a6b] py-4 text-center italic">No recent administrative notices.</p>
+            <p className="text-xs text-[#5c7a6b] py-4 text-center italic">
+              No recent administrative notices.
+            </p>
           ) : (
             <div className="flex flex-col divide-y divide-[#f2f4f2]">
               {recentNotices.map((notice) => (
                 <div key={notice.id} className="flex items-start gap-3 py-3.5">
-                  <span className="w-2.5 h-2.5 rounded-full flex-shrink-0 mt-1 shadow-sm" style={{ background: notice.is_read ? "#d1d1d1" : "#c2a336" }} />
+                  <span
+                    className="w-2.5 h-2.5 rounded-full flex-shrink-0 mt-1 shadow-sm"
+                    style={{ background: notice.is_read ? "#d1d1d1" : "#c2a336" }}
+                  />
                   <div className="min-w-0 flex-1">
                     <div className="flex items-start justify-between gap-2">
-                      <p className="text-sm text-[#1a3a32] leading-relaxed" style={{ fontWeight: notice.is_read ? 500 : 700 }}>{notice.title}</p>
+                      <p
+                        className="text-sm text-[#1a3a32] leading-relaxed"
+                        style={{ fontWeight: notice.is_read ? 500 : 700 }}
+                      >
+                        {notice.title}
+                      </p>
                       <NoticeCategoryBadge category={notice.category} />
                     </div>
                     <p className="text-[11px] text-[#5c7a6b] mt-0.5 font-medium">
                       {timeAgo(notice.created_at)}
-                      {!notice.is_read && <span className="ml-1.5 text-[#c2a336] font-bold italic">· New</span>}
+                      {!notice.is_read && (
+                        <span className="ml-1.5 text-[#c2a336] font-bold italic">
+                          · New
+                        </span>
+                      )}
                     </p>
                   </div>
                 </div>
@@ -322,35 +376,65 @@ const JudgeDashboard = () => {
         </div>
       </div>
 
+      {/* ── Statistics + Registry ── */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        {/* Statistics Bar Charts */}
+        {/* Event stats */}
         <div className="bg-white border border-[#e2e8e4] rounded-xl p-5 shadow-sm">
           <p className="text-[12px] font-bold text-[#1a3a32] uppercase tracking-widest mb-5">
             Event Statistics
           </p>
           <div className="flex flex-col gap-4">
-            <ProgressRow label="Upcoming" count={upcomingCount} total={totalEvents} color="#c2a336" textColor="#c2a336" />
-            <ProgressRow label="Ongoing" count={ongoingCount} total={totalEvents} color="#1a3a32" textColor="#1a3a32" />
-            <ProgressRow label="Past" count={pastCount} total={totalEvents} color="#d1d1d1" textColor="#7d7d7d" />
+            <ProgressRow
+              label="Upcoming"
+              count={upcomingCount}
+              total={totalEvents}
+              color="#c2a336"
+              textColor="#c2a336"
+            />
+            <ProgressRow
+              label="Ongoing"
+              count={ongoingCount}
+              total={totalEvents}
+              color="#1a3a32"
+              textColor="#1a3a32"
+            />
+            <ProgressRow
+              label="Past"
+              count={pastCount}
+              total={totalEvents}
+              color="#d1d1d1"
+              textColor="#7d7d7d"
+            />
           </div>
         </div>
 
-        {/* Registry Summary */}
+        {/* Guest registry */}
         <div className="bg-[#1a3a32] border border-[#1a3a32] rounded-xl p-5 shadow-lg text-white">
           <p className="text-[12px] font-bold text-[#c2a336] uppercase tracking-widest mb-4">
             Guest Registry
           </p>
           <div className="flex items-center gap-4 py-2">
             <div className="w-12 h-12 rounded-full bg-[#c2a336] flex items-center justify-center flex-shrink-0 shadow-md">
-              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#ffffff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M23 21v-2a4 4 0 0 0-3-3.87" /><path d="M16 3.13a4 4 0 0 1 0 7.75" />
+              <svg
+                width="24" height="24" viewBox="0 0 24 24" fill="none"
+                stroke="#ffffff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
+              >
+                <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
+                <circle cx="9" cy="7" r="4" />
+                <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
+                <path d="M16 3.13a4 4 0 0 1 0 7.75" />
               </svg>
             </div>
             <div>
-              <p className="text-xl font-bold text-white">{guestCount} Registered Guest{guestCount !== 1 ? "s" : ""}</p>
-              <div className="mt-1"><RegistryStatusBadge status={myRegistry.status} /></div>
+              <p className="text-xl font-bold text-white">
+                {guestCount} Registered Guest{guestCount !== 1 ? "s" : ""}
+              </p>
+              <div className="mt-1">
+                <RegistryStatusBadge status={myRegistry.status} />
+              </div>
             </div>
           </div>
+
           {myRegistry.guests.length > 0 && (
             <div className="mt-4 border-t border-white/10 pt-4 flex flex-col gap-2">
               {myRegistry.guests.slice(0, 3).map((g, i) => (
@@ -358,9 +442,12 @@ const JudgeDashboard = () => {
                   <div className="w-7 h-7 rounded-full bg-[#c2a336]/20 border border-[#c2a336]/40 flex items-center justify-center text-xs font-bold text-[#c2a336]">
                     {guestInitial(g.name)}
                   </div>
-                  <span className="text-xs font-medium text-white/90 truncate">{g.name}</span>
+                  <span className="text-xs font-medium text-white/90 truncate">
+                    {g.name}
+                  </span>
                   <span className="text-[10px] font-bold text-[#c2a336] ml-auto uppercase tracking-tighter">
-                    {g.type === "MINOR" ? "Minor · " : ""}{genderLabel(g.gender)}
+                    {g.type === "MINOR" ? "Minor · " : ""}
+                    {genderLabel(g.gender)}
                   </span>
                 </div>
               ))}

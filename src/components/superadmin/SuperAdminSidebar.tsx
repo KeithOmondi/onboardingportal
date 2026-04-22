@@ -41,7 +41,7 @@ const AdminSidebar = ({ isOpen, onClose }: AdminSidebarProps) => {
       path: '/superadmin/messages',
       count: totalUnreadCount 
     },
-    { title: 'Settings',               icon: <Settings size={20} />,        path: '/superadmin/settings' },
+    { title: 'Notifications',               icon: <Settings size={20} />,        path: '/superadmin/notifications' },
   ];
 
   return (

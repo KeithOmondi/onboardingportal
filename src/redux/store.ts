@@ -10,6 +10,7 @@ import galleryReducer from "./slices/gallerySlice"
 import chatReducer from "./slices/chatSlice"
 import docuemntsReducer from "./slices/documentsSlice"
 import streamFileReducer from "./slices/streamSlice"
+import emergencyReducer from "./slices/emergency"
 
 export const store = configureStore({
   reducer: {
@@ -23,7 +24,8 @@ export const store = configureStore({
     gallery: galleryReducer,
     chat: chatReducer,
     documents: docuemntsReducer,
-    streamFile: streamFileReducer
+    streamFile: streamFileReducer,
+    emergency: emergencyReducer
   },
   middleware: (getDefaultMiddleware) =>
     getDefaultMiddleware({

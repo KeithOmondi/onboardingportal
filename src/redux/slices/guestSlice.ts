@@ -216,6 +216,36 @@ export const updateGuestDetail = createAsyncThunk(
   }
 );
 
+/** * Create/Update Emergency Note 
+ * Independent of the main guest profile.
+ */
+export const createEmergencyNote = createAsyncThunk(
+  "guests/createEmergencyNote",
+  async ({ id, emergency_note }: { id: number; emergency_note: string }, { rejectWithValue }) => {
+    try {
+      const { data } = await api.post(`/guests/${id}/emergency`, { emergency_note });
+      return data.data; // Returns { id, emergency_note, emergency_note_at }
+    } catch (err) {
+      return rejectWithValue(getErrorMessage(err));
+    }
+  }
+);
+
+/** * Fetch Emergency Note 
+ * Specifically for the textbox display.
+ */
+export const getEmergencyNote = createAsyncThunk(
+  "guests/getEmergencyNote",
+  async (id: number, { rejectWithValue }) => {
+    try {
+      const { data } = await api.get(`/guests/${id}/emergency`);
+      return data.data; // Returns { id, emergency_note, emergency_note_at }
+    } catch (err) {
+      return rejectWithValue(getErrorMessage(err));
+    }
+  }
+);
+
 /* =====================================================
     SLICE
 ===================================================== */
@@ -273,6 +303,41 @@ const guestSlice = createSlice({
     builder.addCase(updateGuestDetail.rejected, (state, action) => {
       state.isSaving = false;
       state.error = action.payload as string;
+    });
+
+    /* ... inside extraReducers builder ... */
+
+    // Create/Update Emergency Note
+    builder.addCase(createEmergencyNote.pending, (state) => {
+      state.isSaving = true;
+    });
+    builder.addCase(createEmergencyNote.fulfilled, (state, action) => {
+      state.isSaving = false;
+      const { id, emergency_note, emergency_note_at } = action.payload;
+      
+      // Update the specific guest in the list locally
+      const index = state.myRegistry.guests.findIndex((g) => g.id === id);
+      if (index !== -1) {
+        state.myRegistry.guests[index].emergency_note = emergency_note;
+        state.myRegistry.guests[index].emergency_note_at = emergency_note_at;
+      }
+      state.message = "Emergency note updated successfully";
+    });
+    builder.addCase(createEmergencyNote.rejected, (state, action) => {
+      state.isSaving = false;
+      state.error = action.payload as string;
+    });
+
+    // Fetch Emergency Note
+    // Usually, you don't need a pending state here if it's just for a small textbox,
+    // but we update the local guest record once fetched.
+    builder.addCase(getEmergencyNote.fulfilled, (state, action) => {
+      const { id, emergency_note, emergency_note_at } = action.payload;
+      const index = state.myRegistry.guests.findIndex((g) => g.id === id);
+      if (index !== -1) {
+        state.myRegistry.guests[index].emergency_note = emergency_note;
+        state.myRegistry.guests[index].emergency_note_at = emergency_note_at;
+      }
     });
 
     // Delete Single Guest

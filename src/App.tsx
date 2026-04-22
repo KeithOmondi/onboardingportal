@@ -43,6 +43,8 @@ import AdminMessages from './pages/admin/AdminMessages';
 import SuperAdminDocuments from './pages/superadmin/SuperAdminDocuments';
 import AdminDocuments from './pages/admin/AdminDocuments';
 import JudgesDocuments from './pages/judge/JudgesDocuments';
+import SuperAdminNotifications from './pages/superadmin/SuperAdminNotifications';
+import EmergencyBanner from './pages/Emergencybanner';
 
 const App = () => {
   const dispatch = useAppDispatch();
@@ -57,6 +59,10 @@ const App = () => {
 
   return (
     <Router>
+
+      {/* ── Emergency Banner: visible to Judges & Registrars only ── */}
+      {isAuthenticated && !isAdmin && <EmergencyBanner />}
+
       <Routes>
         {/* --- Public --- */}
         <Route
@@ -82,7 +88,7 @@ const App = () => {
             <Route path="/superadmin/admin-gallery" element={<SuperAdminGallery />} />
             <Route path="/superadmin/messages" element={<SuperAdminMessages />} />
             <Route path="/superadmin/users" element={<AdminUsers />} />
-            
+            <Route path="/superadmin/notifications" element={<SuperAdminNotifications />} />
           </Route>
         </Route>
 
@@ -118,14 +124,12 @@ const App = () => {
             <Route path="/judge/guest-registration" element={<JudgeGuest />} />
             <Route path="/judge/notices" element={<JudgeNotice />} />
             <Route path="/judge/events" element={<JudgeEvents />} />
-            <Route path="/judge/events" element={<JudgeEvents />} />
             <Route path="/judge/orhc-documents" element={<JudgesDocuments />} />
             <Route path="/judge/gallery" element={<JudgeGallery />} />
           </Route>
         </Route>
 
-
-         {/* --- Registrars Portal --- */}
+        {/* --- Registrars Portal --- */}
         <Route
           element={
             <ProtectedRoute allowedRoles={[UserRole.REGISTRAR]} />
@@ -141,25 +145,24 @@ const App = () => {
         </Route>
 
         {/* --- Root redirect --- */}
-        {/* --- Root redirect --- */}
-<Route
-  path="/"
-  element={
-    !isAuthenticated ? (
-      <Navigate to="/login" replace />
-    ) : user?.role === UserRole.SUPER_ADMIN ? (
-      <Navigate to="/superadmin/dashboard" replace />
-    ) : user?.role === UserRole.ADMIN ? (
-      <Navigate to="/admin/dashboard" replace />
-    ) : user?.role === UserRole.JUDGE ? (
-      <Navigate to="/judge/dashboard" replace />
-    ) : user?.role === UserRole.REGISTRAR ? (
-      <Navigate to="/registrar/dashboard" replace />
-    ) : (
-      <Navigate to="/login" replace />
-    )
-  }
-/>
+        <Route
+          path="/"
+          element={
+            !isAuthenticated ? (
+              <Navigate to="/login" replace />
+            ) : user?.role === UserRole.SUPER_ADMIN ? (
+              <Navigate to="/superadmin/dashboard" replace />
+            ) : user?.role === UserRole.ADMIN ? (
+              <Navigate to="/admin/dashboard" replace />
+            ) : user?.role === UserRole.JUDGE ? (
+              <Navigate to="/judge/dashboard" replace />
+            ) : user?.role === UserRole.REGISTRAR ? (
+              <Navigate to="/registrar/dashboard" replace />
+            ) : (
+              <Navigate to="/login" replace />
+            )
+          }
+        />
 
         {/* --- 404 --- */}
         <Route
@@ -181,8 +184,9 @@ const App = () => {
         />
       </Routes>
 
-      {/* Logic: Show ONLY if authenticated AND user is NOT an admin */}
+      {/* ── Chat Button: visible to Judges & Registrars only ── */}
       {isAuthenticated && !isAdmin && <ChatButton />}
+
     </Router>
   );
 };
