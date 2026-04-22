@@ -3,18 +3,20 @@ import { useDispatch, useSelector } from "react-redux";
 import {
   Send,
   Loader2,
-  AlertTriangle,
   Megaphone,
   RefreshCw,
   RotateCcw,
   CalendarDays,
   Clock,
   FileText,
+  Trash2, // Added
+  Edit3,   // Added
 } from "lucide-react";
 import type { AppDispatch, RootState } from "../../redux/store";
 import {
   fetchEmergencyNote,
   upsertEmergencyNote,
+  deleteEmergencyNote, // Added
   resetEmergencyStatus,
 } from "../../redux/slices/emergency";
 
@@ -98,6 +100,21 @@ const SuperAdminNotifications = () => {
   const handleBroadcast = () => {
     if (!emergencyText) return;
     dispatch(upsertEmergencyNote(emergencyText));
+  };
+
+  // --- Table Actions ---
+  const handleEditFromTable = () => {
+    if (note) {
+      setEmergencyText(note.note);
+      setIsCustomized(true);
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    }
+  };
+
+  const handleDelete = () => {
+    if (window.confirm("Are you sure you want to clear this emergency broadcast?")) {
+      dispatch(deleteEmergencyNote());
+    }
   };
 
   return (
@@ -205,19 +222,8 @@ const SuperAdminNotifications = () => {
           )}
         </div>
 
-        {/* Warning Banner */}
-        <div className="flex items-center gap-4 bg-[#fffbeb] border border-[#f0d989] rounded-[1.25rem] p-4 mt-5 mb-8">
-          <div className="p-2 bg-[#fef3c7] text-[#b45309] rounded-full shrink-0">
-            <AlertTriangle size={16} />
-          </div>
-          <p className="text-[10px] font-bold uppercase tracking-wider text-[#92400e] leading-relaxed m-0">
-            This will update the emergency notice on{" "}
-            <strong className="text-[#1a4731]">all Judge dashboards</strong>.
-          </p>
-        </div>
-
-        {/* --- NEW SECTION: Display Table --- */}
-        <div className="w-full bg-white border border-[#e8ede6] rounded-[1.5rem] overflow-hidden shadow-sm shadow-[#1a4731]/5">
+        {/* --- Registry Table --- */}
+        <div className="w-full bg-white border border-[#e8ede6] rounded-[1.5rem] overflow-hidden shadow-sm shadow-[#1a4731]/5 mt-8">
           <div className="px-6 py-4 bg-[#f8f9f6] border-b border-[#e8ede6] flex items-center justify-between">
             <h3 className="text-[11px] font-bold tracking-widest uppercase text-[#1a4731] flex items-center gap-2">
               <FileText size={14} className="text-[#c9963b]" />
@@ -234,19 +240,20 @@ const SuperAdminNotifications = () => {
                 <tr className="bg-[#fafaf7]">
                   <th className="px-6 py-3 text-[9px] font-bold uppercase tracking-widest text-[#6b7563] border-b border-[#e8ede6]">Content Preview</th>
                   <th className="px-6 py-3 text-[9px] font-bold uppercase tracking-widest text-[#6b7563] border-b border-[#e8ede6]">Last Updated</th>
+                  <th className="px-6 py-3 text-[9px] font-bold uppercase tracking-widest text-[#6b7563] border-b border-[#e8ede6] text-right">Actions</th>
                 </tr>
               </thead>
               <tbody>
                 {note ? (
                   <tr className="group hover:bg-[#fdf6e8]/30 transition-colors">
                     <td className="px-6 py-5 border-b border-[#f4f7f2]">
-                      <p className="text-[12px] text-[#1a4731] font-medium leading-relaxed line-clamp-2 max-w-[300px]">
+                      <p className="text-[12px] text-[#1a4731] font-medium leading-relaxed line-clamp-2 max-w-[240px]">
                         {note.note}
                       </p>
                     </td>
                     <td className="px-6 py-5 border-b border-[#f4f7f2]">
                       <div className="flex flex-col gap-1">
-                        <span className="text-[11px] font-bold text-[#1a4731] flex items-center gap-1.5">
+                        <span className="text-[11px] font-bold text-[#1a4731] flex items-center gap-1.5 whitespace-nowrap">
                           <CalendarDays size={12} className="text-[#c9963b]" />
                           {formatDisplayDate(note.updated_at)}
                         </span>
@@ -256,10 +263,36 @@ const SuperAdminNotifications = () => {
                         </span>
                       </div>
                     </td>
+                    <td className="px-6 py-5 border-b border-[#f4f7f2] text-right">
+                      <div className="flex items-center justify-end gap-2">
+                        {/* Edit Button */}
+                        <button
+                          onClick={handleEditFromTable}
+                          title="Edit broadcast"
+                          className="p-2 text-[#1a4731] bg-[#f0f4f1] hover:bg-[#1a4731] hover:text-white rounded-xl transition-all duration-200"
+                        >
+                          <Edit3 size={14} />
+                        </button>
+                        
+                        {/* Delete Button */}
+                        <button
+                          onClick={handleDelete}
+                          disabled={isEmergencyLoading}
+                          title="Delete broadcast"
+                          className="p-2 text-red-600 bg-red-50 hover:bg-red-600 hover:text-white rounded-xl transition-all duration-200 disabled:opacity-50"
+                        >
+                          {isEmergencyLoading ? (
+                            <Loader2 size={14} className="animate-spin" />
+                          ) : (
+                            <Trash2 size={14} />
+                          )}
+                        </button>
+                      </div>
+                    </td>
                   </tr>
                 ) : (
                   <tr>
-                    <td colSpan={2} className="px-6 py-10 text-center">
+                    <td colSpan={3} className="px-6 py-10 text-center">
                       <p className="text-[11px] font-bold uppercase tracking-widest text-[#b5b89e]">
                         No active broadcast found
                       </p>
@@ -270,8 +303,6 @@ const SuperAdminNotifications = () => {
             </table>
           </div>
         </div>
-        {/* --- END DISPLAY TABLE --- */}
-
       </div>
     </div>
   );

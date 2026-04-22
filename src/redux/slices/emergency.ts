@@ -16,48 +16,54 @@ const initialState: IEmergencyState = {
 };
 
 /**
- * Fetch the single shared emergency note (Judges / Admins)
+ * Fetch the single shared emergency note
  */
 export const fetchEmergencyNote = createAsyncThunk<
   IEmergencyNote | null,
   void,
   { rejectValue: string }
->(
-  "emergency/fetchNote",
-  async (_, { rejectWithValue }) => {
-    try {
-      const { data } = await api.get<IEmergencyResponse>("/emergency/get");
-      return data.data;
-    } catch (err) {
-      const error = err as AxiosError<IApiError>;
-      return rejectWithValue(
-        error.response?.data?.message || "Failed to fetch note"
-      );
-    }
+>("emergency/fetchNote", async (_, { rejectWithValue }) => {
+  try {
+    const { data } = await api.get<IEmergencyResponse>("/emergency/get");
+    return data.data;
+  } catch (err) {
+    const error = err as AxiosError<IApiError>;
+    return rejectWithValue(error.response?.data?.message || "Failed to fetch note");
   }
-);
+});
 
 /**
- * Upsert the single shared emergency note (Admin only)
+ * Create or Update the note (Upsert)
  */
 export const upsertEmergencyNote = createAsyncThunk<
   IEmergencyNote | null,
   string,
   { rejectValue: string }
->(
-  "emergency/upsertNote",
-  async (note, { rejectWithValue }) => {
-    try {
-      const { data } = await api.patch<IEmergencyResponse>("/emergency/update", { note });
-      return data.data;
-    } catch (err) {
-      const error = err as AxiosError<IApiError>;
-      return rejectWithValue(
-        error.response?.data?.message || "Failed to save note"
-      );
-    }
+>("emergency/upsertNote", async (note, { rejectWithValue }) => {
+  try {
+    const { data } = await api.patch<IEmergencyResponse>("/emergency/update", { note });
+    return data.data;
+  } catch (err) {
+    const error = err as AxiosError<IApiError>;
+    return rejectWithValue(error.response?.data?.message || "Failed to save note");
   }
-);
+});
+
+/**
+ * Delete / Clear the emergency note
+ */
+export const deleteEmergencyNote = createAsyncThunk<
+  void,
+  void,
+  { rejectValue: string }
+>("emergency/deleteNote", async (_, { rejectWithValue }) => {
+  try {
+    await api.delete("/emergency/delete");
+  } catch (err) {
+    const error = err as AxiosError<IApiError>;
+    return rejectWithValue(error.response?.data?.message || "Failed to delete note");
+  }
+});
 
 const emergencySlice = createSlice({
   name: "emergency",
@@ -85,7 +91,8 @@ const emergencySlice = createSlice({
         state.loading = false;
         state.error = action.payload ?? "An unknown error occurred";
       })
-      // Upsert Note
+
+      // Upsert Note (Patch)
       .addCase(upsertEmergencyNote.pending, (state) => {
         state.loading = true;
         state.success = false;
@@ -98,8 +105,23 @@ const emergencySlice = createSlice({
       })
       .addCase(upsertEmergencyNote.rejected, (state, action) => {
         state.loading = false;
+        state.error = action.payload ?? "Failed to update note";
+      })
+
+      // Delete Note
+      .addCase(deleteEmergencyNote.pending, (state) => {
+        state.loading = true;
         state.success = false;
-        state.error = action.payload ?? "An unknown error occurred";
+        state.error = null;
+      })
+      .addCase(deleteEmergencyNote.fulfilled, (state) => {
+        state.loading = false;
+        state.success = true;
+        state.note = null; // Important: Clear the note from state
+      })
+      .addCase(deleteEmergencyNote.rejected, (state, action) => {
+        state.loading = false;
+        state.error = action.payload ?? "Failed to delete note";
       });
   },
 });
