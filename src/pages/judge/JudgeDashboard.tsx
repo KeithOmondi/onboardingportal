@@ -6,7 +6,7 @@ import { getMyGuestRegistry } from "../../redux/slices/guestSlice";
 import { useChat } from "../../hooks/useChat";
 import type { IJudicialEvent } from "../../interfaces/events.interface";
 import type { INotice } from "../../interfaces/notices.interface";
-import JudgesNotifications from "./JudgesNotifications";
+//import JudgesNotifications from "./JudgesNotifications";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -253,10 +253,10 @@ const JudgeDashboard = () => {
         </div>
       </div>
 
-      {/* ── Emergency Notice — Decoupled from registrationId so it always shows ── */}
+      {/* ── Emergency Notice — Decoupled from registrationId so it always shows ── 
       <div className="mb-6">
         <JudgesNotifications />
-      </div>
+      </div>  */}
 
       {loading && (
         <p className="text-xs text-[#1a3a32] mb-4 animate-pulse font-medium">
