@@ -10,7 +10,6 @@ import {
   FileSearch, 
   BookOpen, 
   LayoutGrid,
-  ShieldAlert 
 } from "lucide-react";
 import { format } from "date-fns";
 import type { IDocument } from "../../interfaces/documents.interface";
@@ -99,9 +98,7 @@ const JudgesDocuments = () => {
           <h1 className="text-2xl font-bold font-serif text-[#1a3a32] border-b-4 border-[#c2a336] inline-block uppercase tracking-tight">
             DOCUMENTS
           </h1>
-          <p className="text-[10px] text-red-600 font-bold mt-2 flex items-center gap-1">
-            <ShieldAlert size={12} /> INTERNAL SYSTEM VIEW ONLY — UNAUTHORIZED DISTRIBUTION PROHIBITED
-          </p>
+         
         </div>
       </div>
 
