@@ -4,12 +4,12 @@ import {
   Search, Loader2, ChevronUp, ChevronDown, ChevronsUpDown,
   Users, CheckCircle2, Clock3, ShieldCheck, Hash, Phone,
   Mail, FileStack, Download, FileSpreadsheet, FileText, AlertCircle,
-  Edit3, Save, X, RefreshCw, Calendar, Send
+  Edit3, Save, X, RefreshCw
 } from "lucide-react";
 import {
   adminGetAllRegistries, adminGetRegistryById, exportFullRegistryPDF,
   exportFullRegistryExcel, exportFullRegistryWord, downloadGuestListPDF,
-  updateGuestDetail, createEmergencyNote
+  updateGuestDetail
 } from "../../redux/slices/guestSlice";
 import { fetchAllUsers } from "../../redux/slices/userSlice";
 import type { AppDispatch, RootState } from "../../redux/store";
@@ -64,32 +64,17 @@ const DetailItem = ({ label, value }: { label: string; value: string }) => (
   </div>
 );
 
-// ── GuestCard (Updated with Emergency Module) ─────────────────────────────
+// ── GuestCard (Emergency Module Removed) ──────────────────────────────────
 const GuestCard = ({ guest, idx }: { guest: IGuest; idx: number }) => {
   const dispatch = useDispatch<AppDispatch>();
   const isSaving = useSelector((state: RootState) => state.guests.isSaving);
 
-  // Main Profile State
   const [isEditing, setIsEditing] = useState(false);
   const [formData, setFormData] = useState<Partial<IGuest>>({
     name: guest.name,
     phone: guest.phone,
     email: guest.email,
   });
-
-  // Independent Emergency State
-  const [emergencyText, setEmergencyText] = useState(guest.emergency_note || "");
-  const [emergencyDate, setEmergencyDate] = useState(
-    guest.emergency_note_at ? new Date(guest.emergency_note_at).toISOString().slice(0, 16) : ""
-  );
-
-  const handleSaveEmergency = async () => {
-    if (!guest.id) return;
-    await dispatch(createEmergencyNote({ 
-      id: guest.id, 
-      emergency_note: emergencyText 
-    }));
-  };
 
   const handleStartEditing = () => {
     setFormData({ name: guest.name, phone: guest.phone, email: guest.email });
@@ -106,47 +91,6 @@ const GuestCard = ({ guest, idx }: { guest: IGuest; idx: number }) => {
 
   return (
     <div className="bg-slate-50 border border-slate-100 rounded-2xl p-5 space-y-4 relative shadow-sm">
-      
-      {/* ── Independent Emergency Section (Top) ── */}
-      <div className="bg-red-50/50 border border-red-100 rounded-xl p-3 mb-2">
-        <div className="flex items-center gap-2 mb-2 text-red-700">
-          <AlertCircle size={14} className="shrink-0" />
-          <span className="text-[10px] font-black uppercase tracking-widest">Emergency Broadcast</span>
-        </div>
-        <div className="space-y-2">
-          <textarea
-            value={emergencyText}
-            onChange={(e) => setEmergencyText(e.target.value)}
-            placeholder="Type last minute updates (e.g., flight delay)..."
-            className="w-full text-xs p-2 rounded-lg border border-red-200 focus:outline-none focus:ring-2 focus:ring-red-500/20 resize-none h-14 bg-white"
-          />
-          <div className="flex gap-2">
-            <div className="relative flex-1">
-              <Calendar size={12} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
-              <input
-                type="datetime-local"
-                value={emergencyDate}
-                onChange={(e) => setEmergencyDate(e.target.value)}
-                className="w-full pl-8 pr-2 py-1.5 text-[10px] font-bold text-slate-600 bg-white border border-red-200 rounded-lg focus:outline-none"
-              />
-            </div>
-            <button
-              onClick={handleSaveEmergency}
-              disabled={isSaving}
-              className="px-3 py-1.5 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors disabled:opacity-50 flex items-center gap-2 shadow-sm"
-            >
-              {isSaving ? <Loader2 size={12} className="animate-spin" /> : <Send size={12} />}
-              <span className="text-[10px] font-bold">Post</span>
-            </button>
-          </div>
-          {guest.emergency_note_at && (
-            <p className="text-[8px] text-red-400 font-bold italic text-right">
-              Stamp: {new Date(guest.emergency_note_at).toLocaleString('en-KE')}
-            </p>
-          )}
-        </div>
-      </div>
-
       <div className="flex justify-between items-start pt-1">
         <div className="flex items-center gap-2 flex-1">
           <div className="w-8 h-8 rounded-full bg-[#355E3B]/10 flex items-center justify-center text-[#355E3B] font-bold text-xs shrink-0">
@@ -242,7 +186,6 @@ const SuperAdminGuests = () => {
   const [showExportMenu, setShowExportMenu] = useState(false);
   const [lastRefreshed, setLastRefreshed] = useState<Date>(new Date());
 
-  // ── Fetch helpers ─────────────────────────────────────────────────────────
   const fetchExpanded = useCallback(
     (regId: number) => {
       if (regId !== -1) dispatch(adminGetRegistryById(regId));
@@ -250,13 +193,11 @@ const SuperAdminGuests = () => {
     [dispatch]
   );
 
-  // ── Initial load ──────────────────────────────────────────────────────────
   useEffect(() => {
     dispatch(adminGetAllRegistries());
     dispatch(fetchAllUsers({ role: "judge", limit: 1000 }));
   }, [dispatch]);
 
-  // ── Auto-refresh 30s ──────────────────────────────────────────────────────
   useEffect(() => {
     const interval = setInterval(() => {
       dispatch(adminGetAllRegistries());
@@ -268,7 +209,6 @@ const SuperAdminGuests = () => {
     return () => clearInterval(interval);
   }, [dispatch, expandedId, fetchExpanded]);
 
-  // ── Logic ────────────────────────────────────────────────────────────────
   const combinedData = useMemo(() => {
     return users.map((user) => {
       const registry = allLists.find((r) => r.user_id === user.id);
