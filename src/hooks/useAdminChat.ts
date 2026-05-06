@@ -30,7 +30,6 @@ export interface Recipient {
   unreadCount: number;
 }
 
-/** Interface for raw API response to avoid 'any' */
 interface RecipientResponse extends Omit<Recipient, 'lastMessageAt'> {
   lastMessageAt?: string | Date;
 }
@@ -39,7 +38,7 @@ interface ConversationUpdatedPayload {
   conversationId: string;
   lastMessage: string;
   lastMessageAt: string | Date;
-  senderId: string;        // the user who sent the message — use THIS to match recipient
+  senderId: string;
   recipientType: RecipientType;
 }
 
@@ -85,8 +84,17 @@ export const useAdminChat = () => {
   const [loadingBroadcasts, setLoadingBroadcasts] = useState(false);
 
   const socketRef = useRef<Socket | null>(null);
+
+  // Stable refs kept in sync on every render so the socket effect can
+  // always read current values without those values being listed as deps
+  // (which would reconnect the socket on every render cycle).
   const selectedRecipientRef = useRef<Recipient | null>(null);
-  selectedRecipientRef.current = selectedRecipient;
+  const markAsReadRef = useRef<(id: string) => Promise<void>>(async () => {});
+  const updateRecipientActivityRef = useRef<
+    (senderId: string, timestamp: string | Date, isIncoming: boolean) => void
+  >(() => {});
+  const userRoleRef = useRef<string | undefined>(user?.role);
+  const userNameRef = useRef<string | undefined>(user?.full_name);
 
   // ── Data Fetching ────────────────────────────────────────────────────────
 
@@ -111,7 +119,6 @@ export const useAdminChat = () => {
   const markAsRead = useCallback(async (recipientId: string) => {
     try {
       await api.post(`/chat/read/${recipientId}`);
-      // Optimistically zero out in UI immediately
       setRecipients((prev) =>
         prev.map((r) => (r.id === recipientId ? { ...r, unreadCount: 0 } : r))
       );
@@ -121,22 +128,15 @@ export const useAdminChat = () => {
   }, []);
 
   const updateRecipientActivity = useCallback(
-    (
-      senderId: string,        // the actual user id who sent the message
-      timestamp: string | Date,
-      isIncoming: boolean
-    ) => {
+    (senderId: string, timestamp: string | Date, isIncoming: boolean) => {
       setRecipients((prev) => {
-        // Match by senderId (the non-admin user's id), NOT conversationId
         const idx = prev.findIndex((r) => r.id === senderId);
         if (idx === -1) return prev;
 
         const isOpen = selectedRecipientRef.current?.id === senderId;
         const current = prev[idx];
-
-        const newUnreadCount = isIncoming && !isOpen
-          ? (current.unreadCount ?? 0) + 1
-          : current.unreadCount;
+        const newUnreadCount =
+          isIncoming && !isOpen ? (current.unreadCount ?? 0) + 1 : current.unreadCount;
 
         const updated: Recipient = {
           ...current,
@@ -152,13 +152,25 @@ export const useAdminChat = () => {
     []
   );
 
+  // Sync all refs on every render — intentionally outside a useEffect so
+  // they are current before any event handler fires in the same tick.
+  selectedRecipientRef.current = selectedRecipient;
+  markAsReadRef.current = markAsRead;
+  updateRecipientActivityRef.current = updateRecipientActivity;
+  userRoleRef.current = user?.role;
+  userNameRef.current = user?.full_name;
+
   // ── Socket setup ─────────────────────────────────────────────────────────
 
   useEffect(() => {
     if (!user?.id) return;
 
     const socket = io(SOCKET_URL, {
-      query: { userId: user.id, role: user.role, name: user.full_name },
+      query: {
+        userId: user.id,
+        role: userRoleRef.current,
+        name: userNameRef.current,
+      },
       withCredentials: true,
       transports: ["websocket"],
     });
@@ -167,8 +179,7 @@ export const useAdminChat = () => {
     socket.on("conversation:updated", (payload: ConversationUpdatedPayload) => {
       if (payload.recipientType !== "single") return;
       const isIncoming = payload.senderId !== user.id;
-      // FIX: use senderId (the non-admin user's id) — NOT conversationId
-      updateRecipientActivity(payload.senderId, payload.lastMessageAt, isIncoming);
+      updateRecipientActivityRef.current(payload.senderId, payload.lastMessageAt, isIncoming);
     });
 
     socket.on("admin:message:sent", (confirmed: ChatMessage) => {
@@ -177,7 +188,10 @@ export const useAdminChat = () => {
         return;
       }
       const partner = selectedRecipientRef.current;
-      if (partner && (confirmed.sender_id === partner.id || confirmed.recipient_id === partner.id)) {
+      if (
+        partner &&
+        (confirmed.sender_id === partner.id || confirmed.recipient_id === partner.id)
+      ) {
         setLiveMessages((prev) => confirmMessage(prev, confirmed));
       }
     });
@@ -190,7 +204,7 @@ export const useAdminChat = () => {
       const partner = selectedRecipientRef.current;
       if (partner && (msg.sender_id === partner.id || msg.recipient_id === partner.id)) {
         setLiveMessages((prev) => confirmMessage(prev, msg));
-        markAsRead(partner.id);
+        markAsReadRef.current(partner.id);
       }
     });
 
@@ -200,7 +214,7 @@ export const useAdminChat = () => {
     });
 
     return () => { socket.disconnect(); };
-  }, [user, updateRecipientActivity, markAsRead]);
+  }, [user?.id]); // intentional: reconnect only on user ID change; all other values via refs
 
   // ── Broadcasts ───────────────────────────────────────────────────────────
 
@@ -235,7 +249,7 @@ export const useAdminChat = () => {
 
   // ── Sending ──────────────────────────────────────────────────────────────
 
-  const sendToUser = useCallback((message: string, recipientId: string) => {
+  const sendToUser = useCallback((message: string, userId: string) => {
     if (!socketRef.current || !user) return;
     const _tempId = crypto.randomUUID();
     const optimistic: ChatMessage = {
@@ -243,7 +257,7 @@ export const useAdminChat = () => {
       sender_id: user.id,
       sender_name: user.full_name,
       sender_role: user.role,
-      recipient_id: recipientId,
+      recipient_id: userId,
       recipient_type: "single",
       message,
       created_at: new Date().toISOString(),
@@ -252,7 +266,9 @@ export const useAdminChat = () => {
     socketRef.current.emit("admin:message:single", {
       _tempId,
       senderId: user.id,
-      recipientId,
+      senderName: user.full_name,
+      senderRole: user.role,
+      recipientId: userId,
       message,
     });
   }, [user]);
@@ -261,7 +277,6 @@ export const useAdminChat = () => {
     message: string,
     type: "broadcast" | "group",
     targetRoles?: string[],
-    targetUserIds?: string[]
   ) => {
     if (!socketRef.current || !user) return;
     const _tempId = crypto.randomUUID();
@@ -276,14 +291,18 @@ export const useAdminChat = () => {
       created_at: new Date().toISOString(),
     };
     setLiveBroadcasts((prev) => [...prev, optimistic]);
-    socketRef.current.emit(type === "broadcast" ? "admin:message:broadcast" : "admin:message:group", {
-      _tempId,
-      senderId: user.id,
-      recipientType: type,
-      targetRoles,
-      targetUserIds,
-      message,
-    });
+    socketRef.current.emit(
+      type === "broadcast" ? "admin:message:broadcast" : "admin:message:group",
+      {
+        _tempId,
+        senderId: user.id,
+        senderName: user.full_name,
+        senderRole: user.role,
+        recipientType: type,
+        targetRoles,
+        message,
+      }
+    );
   }, [user]);
 
   // ── Memoized Merges ──────────────────────────────────────────────────────
