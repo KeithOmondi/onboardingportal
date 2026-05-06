@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useMemo } from "react";
-import { Loader2, Search, ArrowLeft, CheckCircle2, Circle, Radio, Users } from "lucide-react";
+import { Loader2, Search, ArrowLeft, Circle, Radio, Users } from "lucide-react";
 import { useAdminChat, type Recipient } from "../../hooks/useAdminChat";
 
 const ROLES = ["judge", "registrar", "staff"] as const;
@@ -45,7 +45,7 @@ const AdminMessages = () => {
   const [activeTab, setActiveTab] = useState<"direct" | "broadcast">("direct");
   const [broadcastType, setBroadcastType] = useState<"broadcast" | "group">("group");
   const [selectedRoles, setSelectedRoles] = useState<string[]>([]);
-  const [selectedUserIds, setSelectedUserIds] = useState<string[]>([]);
+  // ✅ selectedUserIds removed — sendBroadcast no longer accepts this param
   const [showSidebar, setShowSidebar] = useState(true);
   const bottomRef = useRef<HTMLDivElement>(null);
 
@@ -55,14 +55,12 @@ const AdminMessages = () => {
         r.full_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
         r.role.toLowerCase().includes(searchQuery.toLowerCase())
     );
-    // sorting is already handled inside useAdminChat
   }, [recipients, searchQuery]);
 
   useEffect(() => {
     if (activeTab === "broadcast") fetchBroadcasts();
   }, [activeTab, fetchBroadcasts]);
 
-  // Auto-scroll to bottom whenever the visible message list changes
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [conversationMessages, broadcastMessages]);
@@ -73,12 +71,6 @@ const AdminMessages = () => {
     );
   };
 
-  const toggleUser = (userId: string) => {
-    setSelectedUserIds((prev) =>
-      prev.includes(userId) ? prev.filter((id) => id !== userId) : [...prev, userId]
-    );
-  };
-
   const handleSendDirect = () => {
     if (!input.trim() || !selectedRecipient) return;
     sendToUser(input.trim(), selectedRecipient.id);
@@ -86,16 +78,18 @@ const AdminMessages = () => {
   };
 
   const handleSendBroadcast = () => {
-    if (!input.trim()) return;
-    sendBroadcast(
-      input.trim(),
-      broadcastType,
-      broadcastType === "group" ? selectedRoles : undefined,
-      selectedUserIds.length > 0 ? selectedUserIds : undefined
-    );
-    setInput("");
-  };
+  if (!input.trim()) return;
 
+  // Guard: group message requires at least one role selected
+  if (broadcastType === "group" && selectedRoles.length === 0) return;
+
+  sendBroadcast(
+    input.trim(),
+    broadcastType,
+    broadcastType === "group" ? selectedRoles : undefined,
+  );
+  setInput("");
+};
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key !== "Enter") return;
     if (activeTab === "direct") handleSendDirect();
@@ -231,7 +225,7 @@ const AdminMessages = () => {
                 </div>
               )}
 
-              {/* Individual additions */}
+              {/* Individual additions — display only, no longer wired to sendBroadcast */}
               <div className="space-y-3">
                 <p className="text-[10px] font-black text-[#3a6644] uppercase tracking-widest flex items-center gap-2">
                   <Users size={12} /> Individual Additions
@@ -240,14 +234,9 @@ const AdminMessages = () => {
                   {filteredRecipients.map((r) => (
                     <div
                       key={r.id}
-                      onClick={() => toggleUser(r.id)}
-                      className="flex items-center gap-3 p-3 border-b border-[#eef5e8] hover:bg-[#f7faf5] cursor-pointer"
+                      className="flex items-center gap-3 p-3 border-b border-[#eef5e8]"
                     >
-                      {selectedUserIds.includes(r.id) ? (
-                        <CheckCircle2 size={16} className="text-[#3a6644]" />
-                      ) : (
-                        <Circle size={16} className="text-[#cddcc5]" />
-                      )}
+                      <Circle size={16} className="text-[#cddcc5]" />
                       <span className="text-[11px] font-bold text-[#1a3a2a]">
                         {r.full_name}
                       </span>
@@ -289,7 +278,6 @@ const AdminMessages = () => {
 
         {/* Messages */}
         <div className="flex-1 overflow-y-auto p-6 flex flex-col gap-4 custom-scrollbar">
-          {/* Loading spinner */}
           {((activeTab === "direct" && loadingHistory) ||
             (activeTab === "broadcast" && loadingBroadcasts)) && (
             <div className="flex flex-col items-center justify-center py-10 text-[#3a6644]">
@@ -300,7 +288,6 @@ const AdminMessages = () => {
             </div>
           )}
 
-          {/* Empty state */}
           {!loadingHistory &&
             !loadingBroadcasts &&
             activeMessages.length === 0 && (
@@ -317,8 +304,6 @@ const AdminMessages = () => {
 
           {activeMessages.map((msg, i) => {
             const isMine = msg.sender_id === currentUser?.id;
-
-            // In broadcast tab, only show outgoing admin messages
             if (activeTab === "broadcast" && !isMine) return null;
 
             return (
@@ -326,7 +311,6 @@ const AdminMessages = () => {
                 key={msg.id ?? msg._tempId ?? i}
                 className={`flex flex-col ${isMine ? "items-end" : "items-start"}`}
               >
-                {/* Sender label for incoming direct messages */}
                 {!isMine && activeTab === "direct" && (
                   <span className="text-[9px] font-black text-[#8aaa92] uppercase px-1 mb-0.5">
                     {msg.sender_name}
@@ -338,10 +322,7 @@ const AdminMessages = () => {
                     isMine
                       ? "bg-[#3a6644] text-white rounded-tr-none"
                       : "bg-white border border-[#d5e0cc] text-[#1a3a2a] rounded-tl-none"
-                  } ${
-                    /* Optimistic bubble: slightly translucent until confirmed */
-                    !msg.id ? "opacity-70" : ""
-                  }`}
+                  } ${!msg.id ? "opacity-70" : ""}`}
                 >
                   {activeTab === "broadcast" && (
                     <div className="text-[9px] font-black text-amber-200 uppercase mb-1 border-b border-white/10 pb-1">
@@ -382,20 +363,22 @@ const AdminMessages = () => {
                 className="flex-1 px-4 py-3 rounded-xl border border-[#cddcc5] bg-[#f7faf5] text-sm focus:outline-none focus:ring-2 focus:ring-[#3a6644]/20"
               />
               <button
-                onClick={
-                  activeTab === "direct" ? handleSendDirect : handleSendBroadcast
-                }
-                className={`px-8 py-3 text-white rounded-xl text-xs font-black uppercase tracking-widest shadow-lg active:scale-95 transition-all ${
-                  activeTab === "broadcast" ? "bg-[#3a6644]" : "bg-[#C9922A]"
-                }`}
-              >
-                {activeTab === "broadcast" ? "Relay" : "Send"}
-              </button>
+  onClick={activeTab === "direct" ? handleSendDirect : handleSendBroadcast}
+  disabled={
+    activeTab === "broadcast" &&
+    broadcastType === "group" &&
+    selectedRoles.length === 0
+  }
+  className={`px-8 py-3 text-white rounded-xl text-xs font-black uppercase tracking-widest shadow-lg active:scale-95 transition-all
+    disabled:opacity-40 disabled:cursor-not-allowed disabled:active:scale-100
+    ${activeTab === "broadcast" ? "bg-[#3a6644]" : "bg-[#C9922A]"}`}
+>
+  {activeTab === "broadcast" ? "Relay" : "Send"}
+</button>
             </div>
             {activeTab === "broadcast" && (
               <p className="text-[9px] text-center mt-2 text-[#8aaa92] font-bold uppercase tracking-wider">
-                Note: This message will be sent as a one-way notification to selected
-                recipients.
+                Note: This message will be sent as a one-way notification to selected recipients.
               </p>
             )}
           </div>
